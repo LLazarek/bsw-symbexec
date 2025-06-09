@@ -2,6 +2,12 @@ from enum import Enum
 from typing import NamedTuple, Callable
 import z3
 
+# What's missing?
+# No loops! Handling loops is hard in same way that ifs are hard, except can't even take the path of forking bc there are potentially infinite execution paths.
+#   -- in practice, typical approach is the same as our workaround: sacrifice soundness by considering a fixed number of iterations (often small, 1-5).
+# Our store is "nice", it's impossible to compute arbitrary references. Means we can treat them fully concretely. In langs like C (or we'll see later, in the shell) you can, and that means we have to model the store with symbolic keys as well as values. That means we often can't just use the same `store_get` function as the interpreter, we need a symbolic one that considers all cells that a symbolic ref might identify!
+# No external function calls (e.g. libraries, FFIs). 
+
 # An Expr is one of
 class Num(NamedTuple):
     n: int
@@ -121,7 +127,6 @@ def interp_op_2(l, r, op, arg_t, res_t, env, store):
         return res_t(op(lv, rv)), s3
     return interp2(l, r, env, store, k)
 
-# Expr -> Value
 def interp(e: 'Expr', env: 'Env', store: 'Store') -> tuple['Value', 'Store']:
     match e:
         case Num(n):
@@ -237,7 +242,7 @@ def store_set(store, ref, newv):
 # Str
 class SymVar(NamedTuple):
     name: str
-    t: 'Type'
+    t: BaseType
 
     # _sort_mapping = {BaseType.INT: 'Int',
     #                  BaseType.BOOL: 'Bool',
@@ -499,26 +504,26 @@ def Lt(a, b):
 def And(a, b):
     return BoolOp(a, b, lambda a,b: a and b, 'and')
 
-f, _, _, avs = \
-    symb_exec(Fun(['a', 'b', 'c'],
-                  [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
-                  Let('x', BaseType.INT, Box(Num(0)),
-                      Let('y', BaseType.INT, Box(Num(0)),
-                          Let('z', BaseType.INT, Box(Num(0)),
-                              Seq(If(Var('a'),
-                                     Set(Var('x'), Num(-2)),
-                                     Bool(False)),
-                                  Seq(If(Lt(Var('b'), Num(5)),
-                                         Seq(If(And(Neq(Var('a'), Bool(True)),
-                                                    Var('c')),
-                                                Set(Var('y'), Num(1)),
-                                                Bool(False)),
-                                             Set(Var('z'), Num(2))),
-                                         Bool(False)),
-                                      Assert(Neq(Add(Get(Var('x')),
-                                                     Add(Get(Var('y')),
-                                                         Get(Var('z')))),
-                                                 Num(3))))))))))
-print(avs)
-for avpath in avs:
-    print(get_model(avpath))
+# f, _, _, avs = \
+#     symb_exec(Fun(['a', 'b', 'c'],
+#                   [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
+#                   Let('x', BaseType.INT, Box(Num(0)),
+#                       Let('y', BaseType.INT, Box(Num(0)),
+#                           Let('z', BaseType.INT, Box(Num(0)),
+#                               Seq(If(Var('a'),
+#                                      Set(Var('x'), Num(-2)),
+#                                      Bool(False)),
+#                                   Seq(If(Lt(Var('b'), Num(5)),
+#                                          Seq(If(And(Neq(Var('a'), Bool(True)),
+#                                                     Var('c')),
+#                                                 Set(Var('y'), Num(1)),
+#                                                 Bool(False)),
+#                                              Set(Var('z'), Num(2))),
+#                                          Bool(False)),
+#                                       Assert(Neq(Add(Get(Var('x')),
+#                                                      Add(Get(Var('y')),
+#                                                          Get(Var('z')))),
+#                                                  Num(3))))))))))
+# print(avs)
+# for avpath in avs:
+#     print(get_model(avpath))
