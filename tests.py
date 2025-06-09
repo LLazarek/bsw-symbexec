@@ -25,6 +25,7 @@ class TestInterp(unittest.TestCase):
                     [Num(5), Add(Num(2), Num(3))])),
             {}),
                          interp(Mul(Num(2), Num(5)), {}))
+
         # self.assertEqual(interp(
         #     Let("omega", FunType([BaseType.INT, BaseType.INT],
         #                          BaseType.INT),
@@ -33,8 +34,19 @@ class TestInterp(unittest.TestCase):
         #                  Num(0))
 
 
-        # App(Let("x", 5, Fun(["y"], Add(x, y))), 7) == 12
-        # Let("x", 100, App(Let("x", 5, Fun(["y"], Add(x, y))), 7)) == 12
+        self.assertEqual(interp(App(Let("x", BaseType.INT, Num(5),
+                                        Fun(["y"], [BaseType.INT],
+                                            Add(Var("x"), Var("y")))),
+                                    [Num(7)]),
+                                {}),
+                         Num(12))
+        self.assertEqual(interp(Let("x", BaseType.INT, Num(100),
+                                    App(Let("x", BaseType.INT, Num(5),
+                                            Fun(["y"], [BaseType.INT],
+                                                Add(Var("x"), Var("y")))),
+                                        [Num(7)])),
+                                {}),
+                         Num(12))
 
 if __name__ == "__main__":
     unittest.main()
