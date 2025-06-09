@@ -244,13 +244,6 @@ class SymVar(NamedTuple):
     name: str
     t: BaseType
 
-    # _sort_mapping = {BaseType.INT: 'Int',
-    #                  BaseType.BOOL: 'Bool',
-    #                  BaseType.STR: 'String'}
-    # def smt_declaration(self):
-    #     return f'(declare-const {name} {_sort_mapping[t]})'
-    # def smt(self):
-    #     return name
     def make_z3(self, varmap):
         if self.name not in varmap:
             match self.t:
@@ -266,8 +259,6 @@ class BinFExpr(NamedTuple):
     r: 'Formula'
     op: str
 
-    # def smt(self):
-    #     return f'({op} {l.smt()} {r.smt()})'
     def make_z3(self, varmap):
         lmade = self.l.make_z3(varmap)
         rmade = self.r.make_z3(varmap)
@@ -297,8 +288,6 @@ class BinFExpr(NamedTuple):
 class NegFExpr(NamedTuple):
     fe: 'Formula'
 
-    # def smt(self):
-    #     return f'(not {fe.smt()})'
     def make_z3(self, varmap):
         return z3.Not(self.fe.make_z3(varmap))
 
@@ -345,6 +334,9 @@ def symb_exec(fun: 'Fun') -> list['ConstraintSet']:
 # i = 0
 def symb_interp(e: 'Expr', env: 'SymbEnv', store: 'SymbStore',
                 pathcond: 'ConstraintSet') -> 'SymbResult':
+    print(f'--------------------')
+    print(f'interp({e})')
+    print(f'store: {store}')
     match e:
         case Num(n):
             return e, store, pathcond, []
@@ -446,8 +438,6 @@ def symb_interp(e: 'Expr', env: 'SymbEnv', store: 'SymbStore',
 
         case Assert(e):
             formula, s2, pc, avs = symb_interp(e, env, store, pathcond)
-            print(f"assert, store: {s2}")
-            print(f"pc: {pc}")
             if satisfiable(pc + [NegFExpr(formula)]):
                 return formula, s2, pc + [formula], avs + [[*pc, NegFExpr(formula)]]
             else:
@@ -471,11 +461,6 @@ def vars_in(formula):
             return vars_in(inner)
 
 def satisfiable(constraints):
-    # symvars = [v for v in vars_in(formula) for formula in constraints]
-    # var_map = {v.name: v.make_z3() for v in symvars}
-    # smt_program = [v.smt_declaration() for v in symvars] + \
-    #     [f'(assert {f.smt()})' for f in constraints] + \
-    #     ['(check-sat)']
     varmap = {}
     s = z3.Solver()
     s.add(*[formula.make_z3(varmap) for formula in constraints])
@@ -504,26 +489,26 @@ def Lt(a, b):
 def And(a, b):
     return BoolOp(a, b, lambda a,b: a and b, 'and')
 
-# f, _, _, avs = \
-#     symb_exec(Fun(['a', 'b', 'c'],
-#                   [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
-#                   Let('x', BaseType.INT, Box(Num(0)),
-#                       Let('y', BaseType.INT, Box(Num(0)),
-#                           Let('z', BaseType.INT, Box(Num(0)),
-#                               Seq(If(Var('a'),
-#                                      Set(Var('x'), Num(-2)),
-#                                      Bool(False)),
-#                                   Seq(If(Lt(Var('b'), Num(5)),
-#                                          Seq(If(And(Neq(Var('a'), Bool(True)),
-#                                                     Var('c')),
-#                                                 Set(Var('y'), Num(1)),
-#                                                 Bool(False)),
-#                                              Set(Var('z'), Num(2))),
-#                                          Bool(False)),
-#                                       Assert(Neq(Add(Get(Var('x')),
-#                                                      Add(Get(Var('y')),
-#                                                          Get(Var('z')))),
-#                                                  Num(3))))))))))
-# print(avs)
-# for avpath in avs:
-#     print(get_model(avpath))
+f, _, _, avs = \
+    symb_exec(Fun(['a', 'b', 'c'],
+                  [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
+                  Let('x', BaseType.INT, Box(Num(0)),
+                      Let('y', BaseType.INT, Box(Num(0)),
+                          Let('z', BaseType.INT, Box(Num(0)),
+                              Seq(If(Var('a'),
+                                     Set(Var('x'), Num(-2)),
+                                     Bool(False)),
+                                  Seq(If(Lt(Var('b'), Num(5)),
+                                         Seq(If(And(Neq(Var('a'), Bool(True)),
+                                                    Var('c')),
+                                                Set(Var('y'), Num(1)),
+                                                Bool(False)),
+                                             Set(Var('z'), Num(2))),
+                                         Bool(False)),
+                                      Assert(Neq(Add(Get(Var('x')),
+                                                     Add(Get(Var('y')),
+                                                         Get(Var('z')))),
+                                                 Num(3))))))))))
+print(avs)
+for avpath in avs:
+    print(get_model(avpath))

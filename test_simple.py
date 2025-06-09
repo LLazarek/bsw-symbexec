@@ -4,7 +4,8 @@ from simple import (
     BaseType,
     Num, BiNumOp, Var, Let, Bool, If, BiNumCmp, BoolOp, Str, Concat, StrEq,
     Fun, App, Box, Get, Set, Seq, Assert, Closure, Ref, interp,
-    symb_interp, symb_exec, SymVar, BinFExpr, NegFExpr, Constraint
+    symb_interp, symb_exec, SymVar, BinFExpr, NegFExpr, Constraint,
+    Add, Sub, Mul, Eq, Neq, Lt, And
 )
 
 class TestInterp(unittest.TestCase):
@@ -369,7 +370,21 @@ class TestSymbInterp(unittest.TestCase):
                                                            Bool(False))),
                                                     Bool(False)),
                                                  Assert(Neq(Sub(Get(Var('x')), Get(Var('y'))), Num(0),)))))))
-        self.assertSetEq(avs, [[NegFExpr(BinFExpr(Num(3), SymVar('I', BaseType.INT), '='))]])
+        self.assertSetEq(avs, [[
+            BinFExpr(SymVar('a', BaseType.INT), Num(0), '!='), # a != 0
+            BinFExpr(SymVar('b', BaseType.INT), Num(0), '='),  # b == 0
+            # ! (2*(a + b) - 4 != 0)
+            # ie 2*(a + b) - 4 == 0
+            NegFExpr(BinFExpr(BinFExpr(BinFExpr(Num(2),
+                                                BinFExpr(SymVar('a', BaseType.INT),
+                                                         SymVar('b', BaseType.INT),
+                                                         '+'),
+                                                '*'),
+                                       Num(4),
+                                       '-'),
+                              Num(0),
+                              '!='))]]
+)
 
         f, _, _, avs = symb_exec(Fun(['a', 'b', 'c'],
                                      [BaseType.Bool, BaseType.INT, BaseType.Bool],
@@ -377,7 +392,7 @@ class TestSymbInterp(unittest.TestCase):
                                          Let('y', BaseType.INT, Box(Num(0)),
                                              Let('z', BaseType.INT, Box(Num(0)),
                                                  Seq(If(Var('a'),
-                                                        Set(Var('x'), Num(-2))
+                                                        Set(Var('x'), Num(-2)),
                                                         Bool(False)),
                                                      Seq(If(Lt(Var('b'), Num(5)),
                                                             Seq(If(And(Neq(Var('a'), Bool(True)),
@@ -390,16 +405,6 @@ class TestSymbInterp(unittest.TestCase):
                                                                         Add(Get(Var('y')),
                                                                             Get(Var('z')))),
                                                                     Num(3))))))))))
-        int x=0, y=0, z=0;
-2 if(a) {
-3 x = -2;
-4 }
-5 if (b < 5) {
-6 if (!a && c) { y = 1; }
-7 z = 2;
-8 }
-9 assert(x + y + z != 3);
-
 
 
 
