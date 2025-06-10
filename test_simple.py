@@ -1,12 +1,6 @@
 import unittest
 
-from simple import (
-    BaseType,
-    Num, BiNumOp, Var, Let, Bool, If, BiNumCmp, BoolOp, Str, Concat, StrEq,
-    Fun, App, Box, Get, Set, Seq, Assert, Closure, Ref, interp,
-    symb_interp, symb_exec, SymVar, BinFExpr, NegFExpr, Constraint,
-    Add, Sub, Mul, Eq, Neq, Lt, And
-)
+from simple import *
 
 class TestInterp(unittest.TestCase):
     def setUp(self):
@@ -305,71 +299,110 @@ class TestSymbInterp(unittest.TestCase):
         if not set_eq(actual, expected):
             self.fail(self._formatMessage(msg, f"Assertion violation sets differ:\nactual:   {actual!r}\nvs\nexpected: {expected!r}"))
 
+    def symb_exec_and_check_avs(self, fun, num_avs):
+        def make_const(v):
+            if isinstance(v, z3.IntNumRef):
+                return Num(v.as_long())
+            elif isinstance(v, z3.BoolRef):
+                return Bool(str(v) == "True")
+            elif isinstance(v, z3.StringRef):
+                return Str(v.as_string())
+        def arbitrary_const(typ):
+            match typ:
+                case BaseType.INT:
+                    return Num(1000)
+                case BaseType.BOOL:
+                    return Bool(False)
+        f, _, _, avs = symb_exec(fun)
+        self.assertEqual(len(avs), num_avs, f"Expected {num_avs} assertion violations but got {avs}")
+        for av_path in avs:
+            model = get_model(av_path)
+            param_to_type = {name: typ for name, typ in zip(fun.params, fun.anns)}
+            param_to_val = {str(var): make_const(model[var]) for var in model}
+            with self.assertRaises(AssertionFailure, msg=f"Counter-example {model} does not cause an assertion failure!"):
+                interp(App(fun, [(param_to_val[name] if name in param_to_val else arbitrary_const(param_to_type[name])) \
+                                 for name in fun.params]),
+                       {}, {})
+        return f, avs
+
     def test_exec(self):
         f, _, _, avs = symb_exec(Fun(['x', 'y'],
                                      [BaseType.INT, BaseType.INT],
                                      BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*')))
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
         self.assertEqual(avs, [])
-        f, _, _, avs = symb_exec(Fun(['x', 'y'],
-                                     [BaseType.INT, BaseType.INT],
-                                     Seq(Assert(BiNumCmp(Var('x'), Num(0), lambda x, y: x == y, '=')),
-                                         BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*'))))
+
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['x', 'y'],
+                [BaseType.INT, BaseType.INT],
+                Seq(Assert(BiNumCmp(Var('x'), Num(0), lambda x, y: x == y, '=')),
+                    BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*'))),
+            1)
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
         self.assertEqual(avs, [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))]])
-        f, _, _, avs = symb_exec(Fun(['x', 'y'],
-                                     [BaseType.INT, BaseType.INT],
-                                     Seq(Assert(BiNumCmp(Var('x'), Num(0), lambda x, y: x == y, '=')),
-                                         Let('z', BaseType.INT, BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*'),
-                                             Assert(BiNumCmp(Var('z'), Num(1), lambda a, b: a > b, '>'))))))
+
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['x', 'y'],
+                [BaseType.INT, BaseType.INT],
+                Seq(Assert(BiNumCmp(Var('x'), Num(0), lambda x, y: x == y, '=')),
+                    Let('z', BaseType.INT, BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*'),
+                        Assert(BiNumCmp(Var('z'), Num(1), lambda a, b: a > b, '>'))))),
+            2)
         self.assertSetEq(avs, [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))],
                                [BinFExpr(SymVar('x', BaseType.INT), Num(0), '='),
                                 NegFExpr(BinFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'), Num(1), '>'))]])
-        f, _, _, avs = symb_exec(Fun(['I'],
-                                     [BaseType.INT],
-                                     Let(
-                                         'f', None, Fun(['x'], [BaseType.INT],
-                                                        Seq(
-                                                            Assert(BiNumCmp(Var('x'), Num(5), lambda x, y: x < y, '<')),
-                                                            BiNumOp(Var('x'), Num(1), lambda x, y: x + y, '+')
-                                                        )
-                                                        ),
-                                         App(Var('f'), [Var('I')])
-                                     )))
+
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['I'],
+                [BaseType.INT],
+                Let(
+                    'f', None, Fun(['x'], [BaseType.INT],
+                                   Seq(
+                                       Assert(BiNumCmp(Var('x'), Num(5), lambda x, y: x < y, '<')),
+                                       BiNumOp(Var('x'), Num(1), lambda x, y: x + y, '+')
+                                   )
+                                   ),
+                    App(Var('f'), [Var('I')])
+                )),
+            1)
         self.assertSetEq(avs, [[NegFExpr(BinFExpr(SymVar('I', BaseType.INT), Num(5), '<'))]])
-        f, _, _, avs = symb_exec(Fun(['I'],
-                                     [BaseType.INT],
-                                     Let(
-                                         'b', None, Box(Num(1)),
-                                         Let(
-                                             'inc', None, Fun(['_'], [BaseType.INT],
-                                                              Set(Var('b'), BiNumOp(Get(Var('b')), Num(1), lambda x, y: x + y, '+'))
-                                                              ),
-                                             Seq(
-                                                 App(Var('inc'), [Num(0)]),
-                                                 Seq(
-                                                     App(Var('inc'), [Num(0)]),
-                                                     Assert(BiNumCmp(Get(Var('b')), Var('I'), lambda a, b: a == b, '='))
-                                                 )
-                                             )
-                                         )
-                                     )))
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['I'],
+                [BaseType.INT],
+                Let(
+                    'b', None, Box(Num(1)),
+                    Let(
+                        'inc', None, Fun(['_'], [BaseType.INT],
+                                         Set(Var('b'), BiNumOp(Get(Var('b')), Num(1), lambda x, y: x + y, '+'))
+                                         ),
+                        Seq(
+                            App(Var('inc'), [Num(0)]),
+                            Seq(
+                                App(Var('inc'), [Num(0)]),
+                                Assert(BiNumCmp(Get(Var('b')), Var('I'), lambda a, b: a == b, '='))
+                            )
+                        )
+                    )
+                )),
+            1)
         self.assertSetEq(avs, [[NegFExpr(BinFExpr(Num(3), SymVar('I', BaseType.INT), '='))]])
 
 
 
-        f, _, _, avs = symb_exec(Fun(['a', 'b'],
-                                     [BaseType.INT, BaseType.INT],
-                                     Let('x', BaseType.INT, Box(Num(1)),
-                                         Let('y', BaseType.INT, Box(Num(0)),
-                                             Seq(If(Neq(Var('a'), Num(0)),
-                                                    Seq(Set(Var('y'), Add(Num(3), Get(Var('x')))),
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                Let('x', BaseType.INT, Box(Num(1)),
+                    Let('y', BaseType.INT, Box(Num(0)),
+                        Seq(If(Neq(Var('a'), Num(0)),
+                               Seq(Set(Var('y'), Add(Num(3), Get(Var('x')))),
                                                         If(Eq(Var('b'), Num(0)),
                                                            Seq(Set(Var('x'), Mul(Num(2), Add(Var('a'), Var('b')))),
                                                                Bool(False)),
                                                            Bool(False))),
-                                                    Bool(False)),
-                                                 Assert(Neq(Sub(Get(Var('x')), Get(Var('y'))), Num(0),)))))))
+                               Bool(False)),
+                            Assert(Neq(Sub(Get(Var('x')), Get(Var('y'))), Num(0),)))))),
+            1)
         self.assertSetEq(avs, [[
             BinFExpr(SymVar('a', BaseType.INT), Num(0), '!='), # a != 0
             BinFExpr(SymVar('b', BaseType.INT), Num(0), '='),  # b == 0
@@ -386,25 +419,28 @@ class TestSymbInterp(unittest.TestCase):
                               '!='))]]
 )
 
-        f, _, _, avs = symb_exec(Fun(['a', 'b', 'c'],
-                                     [BaseType.Bool, BaseType.INT, BaseType.Bool],
-                                     Let('x', BaseType.INT, Box(Num(0)),
-                                         Let('y', BaseType.INT, Box(Num(0)),
-                                             Let('z', BaseType.INT, Box(Num(0)),
-                                                 Seq(If(Var('a'),
-                                                        Set(Var('x'), Num(-2)),
-                                                        Bool(False)),
-                                                     Seq(If(Lt(Var('b'), Num(5)),
-                                                            Seq(If(And(Neq(Var('a'), Bool(True)),
-                                                                       Var('c')),
-                                                                   Set(Var('y'), Num(1)),
-                                                                   Bool(False)),
-                                                                Set(Var('z'), Num(2))),
-                                                            Bool(False)),
-                                                         Assert(Neq(Add(Get(Var('x')),
-                                                                        Add(Get(Var('y')),
-                                                                            Get(Var('z')))),
-                                                                    Num(3))))))))))
+        cook_the_books()
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b', 'c'],
+                [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
+                Let('x', BaseType.INT, Box(Num(0)),
+                    Let('y', BaseType.INT, Box(Num(0)),
+                        Let('z', BaseType.INT, Box(Num(0)),
+                            Seq(If(Var('a'),
+                                   Set(Var('x'), Num(-2)),
+                                   Bool(False)),
+                                Seq(If(Lt(Var('b'), Num(5)),
+                                       Seq(If(And(Not(Var('a')),
+                                                  Var('c')),
+                                              Set(Var('y'), Num(1)),
+                                              Bool(False)),
+                                           Set(Var('z'), Num(2))),
+                                       Bool(False)),
+                                    Assert(Neq(Add(Get(Var('x')),
+                                                   Add(Get(Var('y')),
+                                                       Get(Var('z')))),
+                                               Num(3))))))))),
+            1)
 
 
 

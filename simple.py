@@ -106,6 +106,9 @@ class Ref(NamedTuple):
 # An Env is a dict[str, Value]
 # A Store is a dict[int, Value]
 
+class AssertionFailure(Exception):
+    pass
+
 def interpN(es, env, store, k):
     vs = []
     s = store
@@ -131,7 +134,7 @@ def interp(e: 'Expr', env: 'Env', store: 'Store') -> tuple['Value', 'Store']:
     match e:
         case Num(n):
             return e, store
-        case BiNumOp(l, r, op):
+        case BiNumOp(l, r, op, op_name):
             return interp_op_2(l, r, lambda a, b: op(a.n, b.n),
                                Num, Num,
                                env, store)
@@ -209,7 +212,7 @@ def interp(e: 'Expr', env: 'Env', store: 'Store') -> tuple['Value', 'Store']:
             v, s2 = interp(e, env, store)
             assert isinstance(v, Bool), f"Bad Assert, expected a Bool, got {v}"
             if not v.b:
-                raise Exception(f"Assertion failure: {e}")
+                raise AssertionFailure(f"Assertion failure: {e}")
             return v, s2
 
 
@@ -292,9 +295,6 @@ class NegFExpr(NamedTuple):
         return z3.Not(self.fe.make_z3(varmap))
 
 
-class Constraint(NamedTuple):
-    expr: 'Formula'
-
 # A SymbResult is
 # tuple['Formula',
 #       'SymbStore',
@@ -331,12 +331,14 @@ def symb_exec(fun: 'Fun') -> list['ConstraintSet']:
 
 # A SymbEnv is an Env where values are Formulas, ie dict[str, Formula]
 # A SymbStore is a Store where values are Formulas, ie dict[i, Formula]
-# i = 0
+
+take_els = False
+def cook_the_books():
+    global take_els
+    take_els = True
+
 def symb_interp(e: 'Expr', env: 'SymbEnv', store: 'SymbStore',
                 pathcond: 'ConstraintSet') -> 'SymbResult':
-    print(f'--------------------')
-    print(f'interp({e})')
-    print(f'store: {store}')
     match e:
         case Num(n):
             return e, store, pathcond, []
@@ -371,13 +373,14 @@ def symb_interp(e: 'Expr', env: 'SymbEnv', store: 'SymbStore',
                 result_thn, s3_thn, pc3_thn, avs_thn = symb_interp(thn, env, s2,
                                                                    pc2 + [tst_formula])
             assert result_thn is not None or result_els is not None, f"Impossible? Neither case of an if are satisfiable?"
-            return result_thn, s3_thn, pc3_thn, avs_thn + avs_els
-            # global i
-            # if i == 0:
-            #     i += 1
-            #     return result_els, s3_els, pc3_els, avs_thn + avs_els
-            # else:
-            #     return result_thn, s3_thn, pc3_thn, avs_thn + avs_els
+            # return (result_thn, s3_thn, pc3_thn, avs_thn + avs_els) if result_thn \
+            #     else (result_els, s3_els, pc3_els, avs_thn + avs_els)
+            global take_els
+            if (take_els and result_els is not None) or result_thn is None:
+                take_els = False
+                return result_els, s3_els, pc3_els, avs_thn + avs_els
+            else:
+                return result_thn, s3_thn, pc3_thn, avs_thn + avs_els
         case BiNumCmp(l, r, op, op_name): # small diff
             return symb_interpN([l, r], env, store, pathcond,
                                 make_fexpr_k(lambda fs: BinFExpr(fs[0], fs[1], op_name) \
@@ -488,27 +491,47 @@ def Lt(a, b):
     return BiNumCmp(a, b, lambda a,b: a<b, '<')
 def And(a, b):
     return BoolOp(a, b, lambda a,b: a and b, 'and')
+def Not(a):
+    return BoolOp(a, Bool(True), lambda a,b: a != b, '!=')
 
-f, _, _, avs = \
-    symb_exec(Fun(['a', 'b', 'c'],
-                  [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
-                  Let('x', BaseType.INT, Box(Num(0)),
-                      Let('y', BaseType.INT, Box(Num(0)),
-                          Let('z', BaseType.INT, Box(Num(0)),
-                              Seq(If(Var('a'),
-                                     Set(Var('x'), Num(-2)),
-                                     Bool(False)),
-                                  Seq(If(Lt(Var('b'), Num(5)),
-                                         Seq(If(And(Neq(Var('a'), Bool(True)),
-                                                    Var('c')),
-                                                Set(Var('y'), Num(1)),
-                                                Bool(False)),
-                                             Set(Var('z'), Num(2))),
-                                         Bool(False)),
-                                      Assert(Neq(Add(Get(Var('x')),
-                                                     Add(Get(Var('y')),
-                                                         Get(Var('z')))),
-                                                 Num(3))))))))))
-print(avs)
-for avpath in avs:
-    print(get_model(avpath))
+# fun(a: bool, b: int, c: bool) {
+#   x, y, z = 0
+#   if a {
+#     x = -2
+#   }
+#   if b < 5 {
+#     if !a && c {
+#       y = 1
+#     }
+#     z = 2
+#   }
+#   assert x + y + z != 3
+# }
+# a = false, b < 5, c = true
+# cook_the_books()
+# f, _, _, avs = \
+#     symb_exec(Fun(['a', 'b', 'c'],
+#                 [BaseType.BOOL, BaseType.INT, BaseType.BOOL],
+#                 Let('x', BaseType.INT, Box(Num(0)),
+#                     Let('y', BaseType.INT, Box(Num(0)),
+#                         Let('z', BaseType.INT, Box(Num(0)),
+#                             Seq(If(Var('a'),
+#                                    Set(Var('x'), Num(-2)),
+#                                    Bool(False)),
+#                                 Seq(If(Lt(Var('b'), Num(5)),
+#                                        Seq(If(And(Neq(Var('a'), Bool(True)),
+#                                                   Var('c')),
+#                                               Set(Var('y'), Num(1)),
+#                                               Bool(False)),
+#                                            Set(Var('z'), Num(2))),
+#                                        Bool(False)),
+#                                     Assert(Neq(Add(Get(Var('x')),
+#                                                    Add(Get(Var('y')),
+#                                                        Get(Var('z')))),
+#                                                Num(3))))))))))
+# print(avs)
+# for avpath in avs:
+#     m = get_model(avpath)
+#     print(f"{m!r}")
+#     for var in m:
+#         print(f"{var} : {m[var]}")
