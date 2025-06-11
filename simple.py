@@ -1,34 +1,16 @@
-## Plan -- finish @ 3pm
-# ---------- resume here ----------
-# 5. Recap what we did yesterday super quick, and our formulas
-# 6. Talk about symb_exec, function interface, and symb_interp
-# 7. Skim symb_interp tests
-# 7.5. Fill in results of pre-written tests for symb_exec (write readable comment, paste in AST)
-# 8. Write symb_exec, symb_interp
-# --- check works, pause for Qs
+## Plan -- finish @ 4.40pm
 #
-# 9. Add data defs for bools and assert (extend the basetypes) -- but NOT if! -- and add the testing helpers for bool ops
-# 10. Go over some tests (pre-written)
-# 11. Exercise! Take 7min, implement interp boolop, binumcmp, assert cases (I implement in parallel)
-# -> go quickly over my soln
+# Recap:
+# - We implemented symbolic execution for plain arithmetic, wasn't much to it
+# - We added boolean ops and assertions, and suddenly things started to get interesting
+# - We specialized our execution engine to collect assertion violations, and to track
+#   the "path condition" -- the conditions under which evaluation can reach a given expression
+# - Then the assertion case basically tracked failed assertions by checking satisfiability,
+#   recording violations, and recording the check in the path condition
+# - We wrote this `satisfiable` helper that queries the SMT solver. Recap what a SMT solver is
+# - I also added this helper to get the model from the solver, which we will use in tests
 #
-# 12. Add symbolic data defs for bools
-# 13. Quickly check out tests I pre-wrote for them
-# 14. Exercise! Take 7min, implement symbolic boolop and binumcmp cases (I implement in parallel)
-# -> go quickly over my soln
-#
-# 15. High level discussion: Assert is now where things get interesting! Now we have bugs, specialize symbexec to find them -- pathcondition (from passed assertions), collecting assertion violations
-# 15.5. Go over some tests
-# 16. Implement symbolic Assert
-# 17. Now we used this `satisfiable` query, to create these AV formulas, we want to ask Z3 to solve for us!
-#
-#
-#
-# -------- got to here --------- todo thread pathcond, avs
-#
-# 
-#
-# 17.1. Write `satisfiable`, and also write `get_model` for use with AV pathconds
+# 17.1. Write tests
 # 17. upgrade our tests to actually check avs
 #
 #

@@ -233,7 +233,7 @@ def symb_exec(fun: 'Fun') -> 'Formula':
     for t in fun.anns:
         assert not isinstance(t, FunType), f"Inputs can only be first-order, but got an input of type {t}"
     symvars = [SymVar(p, t) for p, t in zip(fun.params, fun.anns)]
-    formula, pc, avs = symb_interp(fun.body, bind({}, fun.params, symvars))
+    formula, pc, avs = symb_interp(fun.body, bind({}, fun.params, symvars), [], [])
     return formula, avs
 
 
@@ -347,7 +347,7 @@ def symb_interp(e: 'Expr',
             formula, pc2, avs2 = symb_interp(tst, env, pathcond, avs)
             if satisfiable(pc2 + [NegFExpr(formula)]):
                 # NOTE difference: The assertion could fail, but any code after this will only run if it passed, so add it to the path condition
-                return formula, pc2 + [formula], avs2 + [NegFExpr(formula)]
+                return formula, pc2 + [formula], avs2 + [(pc2 + [NegFExpr(formula)])]
             else:
                 # The assertion must succeed
                 return formula, pc2 + [formula], avs2
