@@ -83,6 +83,8 @@ def And(a, b):
     return BoolOp(a, b, lambda a,b: a and b, 'and')
 def Not(a):
     return BoolOp(a, Bool(True), lambda a,b: a != b, '!=')
+def Seq(a, b):
+    return Let("__", BaseType.BOOL, a, b)
 
 
 

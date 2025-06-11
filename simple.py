@@ -10,17 +10,20 @@
 # - We wrote this `satisfiable` helper that queries the SMT solver. Recap what a SMT solver is
 # - I also added this helper to get the model from the solver, which we will use in tests
 #
-# 17.1. Write tests
-# 17. upgrade our tests to actually check avs
+# 17. Write tests
+# 17.1. Talk about testing/checking AV pathconds
+# 17.2. Run the tests
 #
 #
-# -- check works, pause for Qs
+# --
 # Now the fun: If!
 # 16. Exercise! Take 4min, implement interp If
+#
 # 17. Discussion: what do we need to do about symbolic if? Recall branching picture from board
 # 18. Write some tests for symbolic if (pre-written programs, fill avs)
 # 17. Implement symbolic if,
 # --- Run tests
+#
 # 18. Recap weaknesses of our if implementation
 # 18. Exercise! Take 5-10min. Discuss with neighbors, what are some approaches to fix the soundness problem with `if`? Problems? Tradeoffs?
 #     --> interpretation operates over multiple possible program states, and returns multiple possible results, all in parallel

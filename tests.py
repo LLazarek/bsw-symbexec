@@ -213,10 +213,11 @@ class TestInterp(unittest.TestCase):
 
 
         # --- assert ---
+        # Note `Seq(e1, e2)` == `Let("dummy", INT, e1, e2)`
         f, asservtion_violation_pathconds = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
                 [BaseType.INT, BaseType.INT],
-                Let("_", BaseType.BOOL, Assert(Eq(Var('x'), Num(0))),
+                Seq(Assert(Eq(Var('x'), Num(0))),
                     Mul(Var('x'), Num(2)))),
             1)
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
@@ -226,7 +227,7 @@ class TestInterp(unittest.TestCase):
         f, avs = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
                 [BaseType.INT, BaseType.INT],
-                Let("_", BaseType.BOOL, Assert(Eq(Var('x'), Num(0))),
+                Seq(Assert(Eq(Var('x'), Num(0))),
                     Let('z', BaseType.INT, Mul(Var('x'), Num(2)),
                         Assert(Gt(Var('z'), Num(1)))))),
             2)
@@ -239,6 +240,24 @@ class TestInterp(unittest.TestCase):
                                                       '*'),
                                              Num(1),
                                              '>'))]])
+
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['I'],
+                [BaseType.INT],
+                Let(
+                    'f', None, Fun(['x'], [BaseType.INT],
+                                   Seq(Assert(Lt(Var('x'), Num(5))),
+                                       Add(Var('x'), Num(1)))),
+                    App(Var('f'), [Var('I')])
+                )),
+            1)
+        self.assertSetEq(avs,
+                         [[NegFExpr(BinFExpr(SymVar('I', BaseType.INT), Num(5), '<'))]])
+
+
+
+
+
 
 
 if __name__ == "__main__":
