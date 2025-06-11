@@ -152,7 +152,7 @@ class TestInterp(unittest.TestCase):
         return f, avs
 
 
-    
+
     def test_symb_exec(self):
         self.assertEqual(symb_exec_v1(
             Fun(["a", "b", "c"],
@@ -214,15 +214,25 @@ class TestInterp(unittest.TestCase):
 
         # --- assert ---
         # Note `Seq(e1, e2)` == `Let("dummy", INT, e1, e2)`
-        f, asservtion_violation_pathconds = self.symb_exec_and_check_avs(
+        f, assertion_violation_pathconds = symb_exec(
+            Fun(['x', 'y'],
+                [BaseType.INT, BaseType.INT],
+                BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*')))
+        self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
+        self.assertEqual(assertion_violation_pathconds,
+
+                         )
+
+        f, assertion_violation_pathconds = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
                 [BaseType.INT, BaseType.INT],
                 Seq(Assert(Eq(Var('x'), Num(0))),
                     Mul(Var('x'), Num(2)))),
             1)
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
-        self.assertEqual(asservtion_violation_pathconds,
-                         [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))]])
+        self.assertEqual(assertion_violation_pathconds,
+
+                         )
 
         f, avs = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
@@ -232,14 +242,7 @@ class TestInterp(unittest.TestCase):
                         Assert(Gt(Var('z'), Num(1)))))),
             2)
         self.assertSetEq(avs,
-                         [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))],
-
-                          [BinFExpr(SymVar('x', BaseType.INT), Num(0), '='),
-                           NegFExpr(BinFExpr(BinFExpr(SymVar('x', BaseType.INT),
-                                                      Num(2),
-                                                      '*'),
-                                             Num(1),
-                                             '>'))]])
+                         )
 
         f, avs = self.symb_exec_and_check_avs(
             Fun(['I'],
@@ -252,12 +255,54 @@ class TestInterp(unittest.TestCase):
                 )),
             1)
         self.assertSetEq(avs,
-                         [[NegFExpr(BinFExpr(SymVar('I', BaseType.INT), Num(5), '<'))]])
+                         )
 
 
 
 
-
+        # --- If ---
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['a', 'b'],
+        #         [BaseType.INT, BaseType.INT],
+        #         If(Lt(Var('a'), Var('b')),
+        #            Assert(Neq(Var('a'), Var('b'))),
+        #            Bool(False))),
+        #      )
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['a', 'b'],
+        #         [BaseType.INT, BaseType.INT],
+        #         If(Lt(Var('a'), Var('b')),
+        #            Bool(False),
+        #            Assert(Neq(Var('a'), Var('b'))))),
+        #      )
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['a', 'b'],
+        #         [BaseType.INT, BaseType.INT],
+        #         If(Lt(Var('a'), Var('b')),
+        #            If(Eq(Var('a'), Var('b')),
+        #               Assert(Eq(Var('a'), Num(0))),
+        #               Bool(False)),
+        #            Bool(False))),
+        #      )
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['a', 'b'],
+        #         [BaseType.INT, BaseType.INT],
+        #         If(Lt(Var('a'), Var('b')),
+        #            If(Eq(Var('a'), Var('b')),
+        #               Bool(False),
+        #               Assert(Eq(Var('a'), Num(0)))),
+        #            Bool(False))),
+        #      )
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['a', 'b'],
+        #         [BaseType.INT, BaseType.INT],
+        #         Seq(If(Lt(Var('a'), Var('b')),
+        #                Assert(Eq(Var('b'), Num(0))),
+        #                Bool(False)),
+        #             If(Gt(Var('b'), Num(5)),
+        #                Bool(False),
+        #                Assert(Eq(Var('a'), Num(5)))))),
+        #      )
 
 
 if __name__ == "__main__":

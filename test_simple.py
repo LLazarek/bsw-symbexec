@@ -326,6 +326,7 @@ class TestSymbInterp(unittest.TestCase):
         return f, avs
 
     def test_exec(self):
+        # --- IN CLASS REFER TO HERE ---
         f, _, _, avs = symb_exec(Fun(['x', 'y'],
                                      [BaseType.INT, BaseType.INT],
                                      BiNumOp(Var('x'), Num(2), lambda x, y: x * y, '*')))
@@ -366,6 +367,74 @@ class TestSymbInterp(unittest.TestCase):
                 )),
             1)
         self.assertSetEq(avs, [[NegFExpr(BinFExpr(SymVar('I', BaseType.INT), Num(5), '<'))]])
+
+
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   Assert(Neq(Var('a'), Var('b'))),
+                   Bool(False))),
+            0)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   Bool(False),
+                   Assert(Neq(Var('a'), Var('b'))))),
+            1)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   If(Eq(Var('a'), Var('b')),
+                      Assert(Eq(Var('a'), Num(0))),
+                      Bool(False)),
+                   Bool(False))),
+            0)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   If(Eq(Var('a'), Var('b')),
+                      Bool(False),
+                      Assert(Eq(Var('a'), Num(0)))),
+                   Bool(False))),
+            1)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                Seq(If(Lt(Var('a'), Var('b')),
+                       Assert(Eq(Var('b'), Num(0))),
+                       Bool(False)),
+                    If(Gt(Var('b'), Num(5)),
+                       Bool(False),
+                       Assert(Eq(Var('a'), Num(5)))))),
+            # Take the then branch of the first conditional:
+            #
+            # Hit first assert and pass:
+            #   Take the then branch of second conditional:
+            # a < b & b = 0 & b > 5 -- imposs
+            #   Take the else branch of second conditional:
+            # a < b & b = 0 & !(b > 5) & a = 5 -- happy assertion 2: imposs
+            # a < b & b = 0 & !(b > 5) & !(a = 5) -- fail assertion 2: yes guaranteed, bug
+            #
+            # Hit first assert and fail:
+            # a < b & !(b = 0) -- fail assertion1: possible, bug
+            #
+            # ====== we missed all these possibilities! ===== Unsoundness in action
+            # Take the else branch of the first conditional:
+            #
+            # !(a < b) & b > 5 -- no assertions hit at all
+            # !(a < b) & !(b > 5) & a = 5 -- happy assertion 2
+            # !(a < b) & !(b > 5) & !(a = 5) -- fail assertion 2: possible, bug
+            # ===============================================
+            2)
+
+
+
+        # --- copy from here
+
         f, avs = self.symb_exec_and_check_avs(
             Fun(['I'],
                 [BaseType.INT],
@@ -396,10 +465,10 @@ class TestSymbInterp(unittest.TestCase):
                     Let('y', BaseType.INT, Box(Num(0)),
                         Seq(If(Neq(Var('a'), Num(0)),
                                Seq(Set(Var('y'), Add(Num(3), Get(Var('x')))),
-                                                        If(Eq(Var('b'), Num(0)),
-                                                           Seq(Set(Var('x'), Mul(Num(2), Add(Var('a'), Var('b')))),
-                                                               Bool(False)),
-                                                           Bool(False))),
+                                   If(Eq(Var('b'), Num(0)),
+                                      Seq(Set(Var('x'), Mul(Num(2), Add(Var('a'), Var('b')))),
+                                          Bool(False)),
+                                      Bool(False))),
                                Bool(False)),
                             Assert(Neq(Sub(Get(Var('x')), Get(Var('y'))), Num(0),)))))),
             1)
