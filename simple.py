@@ -1,3 +1,57 @@
+## Plan -- finish @ 3pm
+# ---------- resume here ----------
+# 5. Recap what we did yesterday super quick, and our formulas
+# 6. Talk about symb_exec, function interface, and symb_interp
+# 7. Skim symb_interp tests
+# 7.5. Fill in results of pre-written tests for symb_exec (write readable comment, paste in AST)
+# 8. Write symb_exec, symb_interp
+# --- check works, pause for Qs
+#
+# 9. Add data defs for bools and assert (extend the basetypes) -- but NOT if! -- and add the testing helpers for bool ops
+# 10. Go over some tests (pre-written)
+# 11. Exercise! Take 7min, implement interp boolop, binumcmp, assert cases (I implement in parallel)
+# -> go quickly over my soln
+#
+# 12. Add symbolic data defs for bools
+# 13. Quickly check out tests I pre-wrote for them
+# 14. Exercise! Take 7min, implement symbolic boolop and binumcmp cases (I implement in parallel)
+# -> go quickly over my soln
+#
+# 15. High level discussion: Assert is now where things get interesting! Now we have bugs, specialize symbexec to find them -- pathcondition (from passed assertions), collecting assertion violations
+# 15.5. Go over some tests
+# 16. Implement symbolic Assert
+# 17. Now we used this `satisfiable` query, to create these AV formulas, we want to ask Z3 to solve for us!
+#
+#
+#
+# -------- got to here --------- todo thread pathcond, avs
+#
+# 
+#
+# 17.1. Write `satisfiable`, and also write `get_model` for use with AV pathconds
+# 17. upgrade our tests to actually check avs
+#
+#
+# -- check works, pause for Qs
+# Now the fun: If!
+# 16. Exercise! Take 4min, implement interp If
+# 17. Discussion: what do we need to do about symbolic if? Recall branching picture from board
+# 18. Write some tests for symbolic if (pre-written programs, fill avs)
+# 17. Implement symbolic if,
+# --- Run tests
+# 18. Recap weaknesses of our if implementation
+# 18. Exercise! Take 5-10min. Discuss with neighbors, what are some approaches to fix the soundness problem with `if`? Problems? Tradeoffs?
+#     --> interpretation operates over multiple possible program states, and returns multiple possible results, all in parallel
+#     --> just changing return type to multiple, cps'ing?
+# 18. (if time?) Exercise! Take 10-15min. A terminating program can cause `symb_interp` to run forever. Write such a program, and then propose ideas to address it.
+#
+#
+# ---------- break, next state ----------
+# 1. Boxes, get, set, seq, data defs
+# 2. Finish pre-written tests
+# 3. 
+
+
 from enum import Enum
 from typing import NamedTuple, Callable
 import z3
@@ -46,6 +100,11 @@ class BoolOp(NamedTuple): # and or xor b=
     op: Callable[[bool, bool], bool]
     op_name: str
 
+class Assert(NamedTuple):
+    tst: 'Expr'
+
+
+
 class Str(NamedTuple):
     s: str
     def make_z3(self, _):
@@ -77,9 +136,6 @@ class Seq(NamedTuple):
     second: 'Expr'
 
 
-class Assert(NamedTuple):
-    tst: 'Expr'
-
 
 # a Type is one of
 class BaseType(Enum):
@@ -91,6 +147,30 @@ class FunType(NamedTuple):
     rng: 'Type'
 class BoxType(NamedTuple):
     inner: 'Type'
+
+
+
+def Add(a, b):
+    return BiNumOp(a, b, lambda a,b: a+b, '+')
+def Sub(a, b):
+    return BiNumOp(a, b, lambda a,b: a-b, '-')
+def Mul(a, b):
+    return BiNumOp(a, b, lambda a,b: a*b, '*')
+def Eq(a, b):
+    return BiNumCmp(a, b, lambda a,b: a==b, '=')
+def Neq(a, b):
+    return BiNumCmp(a, b, lambda a,b: a!=b, '!=')
+def Lt(a, b):
+    return BiNumCmp(a, b, lambda a,b: a<b, '<')
+def Gt(a, b):
+    return BiNumCmp(a, b, lambda a,b: a>b, '>')
+def And(a, b):
+    return BoolOp(a, b, lambda a,b: a and b, 'and')
+def Not(a):
+    return BoolOp(a, Bool(True), lambda a,b: a != b, '!=')
+
+
+
 
 
 # A Value is one of
@@ -322,6 +402,13 @@ def make_fexpr_k(fexpr_maker):
     return lambda fs, s, pc, violations: (fexpr_maker(fs), s, pc, violations)
 # A ConstraintSet is a list[Constraint]
 
+def symb_exec_v1(fun: 'Fun') -> 'Formula':
+    for t in fun.anns:
+        assert not (isinstance(t, FunType) or isinstance(t, BoxType)), \
+            f"Inputs can only be first order, but got an input of type {t}"
+    symvars = [SymVar(p, t) for p, t in zip(fun.params, fun.anns)]
+    return symb_interp(fun.body, bind({}, fun.params, symvars), {}, [])[0]
+
 def symb_exec(fun: 'Fun') -> list['ConstraintSet']:
     for t in fun.anns:
         assert not (isinstance(t, FunType) or isinstance(t, BoxType)), \
@@ -467,32 +554,15 @@ def satisfiable(constraints):
     varmap = {}
     s = z3.Solver()
     s.add(*[formula.make_z3(varmap) for formula in constraints])
-    return s.check() == z3.sat
+    return s.check() != z3.unsat
 
 def get_model(constraints):
     varmap = {}
     s = z3.Solver()
     s.add(*[formula.make_z3(varmap) for formula in constraints])
-    assert s.check() == z3.sat
+    assert s.check() != z3.unsat
     return s.model()
 
-
-def Add(a, b):
-    return BiNumOp(a, b, lambda a,b: a+b, '+')
-def Sub(a, b):
-    return BiNumOp(a, b, lambda a,b: a-b, '-')
-def Mul(a, b):
-    return BiNumOp(a, b, lambda a,b: a*b, '*')
-def Eq(a, b):
-    return BiNumCmp(a, b, lambda a,b: a==b, '=')
-def Neq(a, b):
-    return BiNumCmp(a, b, lambda a,b: a!=b, '!=')
-def Lt(a, b):
-    return BiNumCmp(a, b, lambda a,b: a<b, '<')
-def And(a, b):
-    return BoolOp(a, b, lambda a,b: a and b, 'and')
-def Not(a):
-    return BoolOp(a, Bool(True), lambda a,b: a != b, '!=')
 
 # fun(a: bool, b: int, c: bool) {
 #   x, y, z = 0

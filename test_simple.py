@@ -445,5 +445,42 @@ class TestSymbInterp(unittest.TestCase):
 
 
 
+    def test_symb_exec(self):
+        self.assertEqual(symb_exec_v1(
+            Fun(["a", "b", "c"],
+                [BaseType.INT, BaseType.INT, BaseType.INT],
+                Let("f", FunType([BaseType.INT, BaseType.INT],
+                                 BaseType.INT),
+                    Fun(["x", "y"],
+                        [BaseType.INT, BaseType.INT],
+                        Add(Var("x"), Var("y"))),
+                    App(Var("f"),
+                        [Var("a"), Add(Var("b"), Var("c"))])))),
+
+                         BinFExpr(SymVar("a", BaseType.INT),
+                                  BinFExpr(SymVar("b", BaseType.INT), SymVar("c", BaseType.INT), '+'),
+                                  '+'))
+
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.INT],
+                App(Let("x", BaseType.INT, Num(5),
+                        Fun(["y"], [BaseType.INT],
+                            Mul(Var("x"), Var("y")))),
+                    [Var("a")]))),
+
+                         BinFExpr(Num(5), SymVar("a", BaseType.INT), '*'))
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.INT],
+                Let("x", BaseType.INT, Num(100),
+                    App(Let("x", BaseType.INT, Var("a"),
+                            Fun(["y"], [BaseType.INT],
+                                Sub(Var("x"), Var("y")))),
+                        [Num(7)])))),
+
+                         BinFExpr(SymVar("a", BaseType.INT), Num(7), '-'))
+
+
 if __name__ == "__main__":
     unittest.main()

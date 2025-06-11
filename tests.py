@@ -47,40 +47,146 @@ class TestInterp(unittest.TestCase):
                          Num(12))
 
 
-    def test_symb(self):
-        self.assertEqual(symb_interp(Num(5), {}),
-                         Num(5))
-        self.assertEqual(symb_interp(Add(Num(5), Num(-1)), {}),
-                         Num(4))
-        self.assertEqual(symb_interp(Let("x", BaseType.INT,
-                                    Num(0),
-                                    Mul(Var("x"), Num(2))),
+        # --- bools, assert ---
+        self.assertEqual(interp(Eq(Num(7), Num(5)),
                                 {}),
+                         Bool(False))
+        self.assertEqual(interp(Lt(Num(2), Num(5)),
+                                {}),
+                         Bool(True))
+        self.assertEqual(interp(Assert(Lt(Num(2), Num(5))),
+                                {}),
+                         Bool(True))
+        with self.assertRaises(AssertionFailure):
+            interp(Assert(Not(Lt(Num(2), Num(5)))),
+                   {})
+
+
+    def test_symb_interp(self):
+        def symb_interp_t(e):
+            f, _, _ = symb_interp(e, {}, [], [])
+            return f
+        self.assertEqual(symb_interp_t(Num(5)),
+                         Num(5))
+        self.assertEqual(symb_interp_t(Add(Num(5), Num(-1))),
+                         Num(4))
+        self.assertEqual(symb_interp_t(Let("x", BaseType.INT,
+                                    Num(0),
+                                    Mul(Var("x"), Num(2)))),
                          Num(0))
-        self.assertEqual(symb_interp(
+        self.assertEqual(symb_interp_t(
             Let("f", FunType([BaseType.INT, BaseType.INT],
                              BaseType.INT),
                 Fun(["x", "y"],
                     [BaseType.INT, BaseType.INT],
                     Add(Var("x"), Var("y"))),
                 App(Var("f"),
-                    [Num(5), Add(Num(2), Num(3))])),
-            {}),
+                    [Num(5), Add(Num(2), Num(3))]))),
+
                          interp(Mul(Num(2), Num(5)), {}))
 
-        self.assertEqual(symb_interp(App(Let("x", BaseType.INT, Num(5),
+        self.assertEqual(symb_interp_t(App(Let("x", BaseType.INT, Num(5),
                                         Fun(["y"], [BaseType.INT],
                                             Add(Var("x"), Var("y")))),
-                                    [Num(7)]),
-                                {}),
+                                    [Num(7)])),
+
                          Num(12))
-        self.assertEqual(symb_interp(Let("x", BaseType.INT, Num(100),
+        self.assertEqual(symb_interp_t(Let("x", BaseType.INT, Num(100),
                                     App(Let("x", BaseType.INT, Num(5),
                                             Fun(["y"], [BaseType.INT],
                                                 Add(Var("x"), Var("y")))),
-                                        [Num(7)])),
-                                {}),
+                                        [Num(7)]))),
+
                          Num(12))
+
+    def test_symb_exec(self):
+        self.assertEqual(symb_exec_v1(
+            Fun(["a", "b", "c"],
+                [BaseType.INT, BaseType.INT, BaseType.INT],
+                Let("f", FunType([BaseType.INT, BaseType.INT],
+                                 BaseType.INT),
+                    Fun(["x", "y"],
+                        [BaseType.INT, BaseType.INT],
+                        Add(Var("x"), Var("y"))),
+                    App(Var("f"),
+                        [Var("a"), Add(Var("b"), Var("c"))])))),
+
+                         # a + (b + c)
+                         BinFExpr(SymVar("a", BaseType.INT),
+                                  BinFExpr(SymVar("b", BaseType.INT), SymVar("c", BaseType.INT), '+'),
+                                  '+'))
+
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.INT],
+                App(Let("x", BaseType.INT, Num(5),
+                        Fun(["y"], [BaseType.INT],
+                            Mul(Var("x"), Var("y")))),
+                    [Var("a")]))),
+
+                         # 5a
+                         BinFExpr(Num(5), SymVar("a", BaseType.INT), '*'))
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.INT],
+                Let("x", BaseType.INT, Num(100),
+                    App(Let("x", BaseType.INT, Var("a"),
+                            Fun(["y"], [BaseType.INT],
+                                Sub(Var("x"), Var("y")))),
+                        [Num(7)])))),
+
+                         # a - 7
+                         BinFExpr(SymVar("a", BaseType.INT), Num(7), '-'))
+
+        # --- bool ops ---
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.INT],
+                Eq(Num(7), Var("a")))),
+
+                         BinFExpr(Num(7), SymVar("a", BaseType.INT), '='))
+        self.assertEqual(symb_exec_v1(
+            Fun(["a"],
+                [BaseType.BOOL],
+                And(Bool(True), Var("a")))),
+
+                         BinFExpr(Bool(True), SymVar("a", BaseType.BOOL), 'and'))
+
+
+
+
+
+
+
+        # # --- assert ---
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['x', 'y'],
+        #         [BaseType.INT, BaseType.INT],
+        #         Let("_", BaseType.BOOL, Assert(Eq(Var('x'), Num(0))),
+        #             Mul(Var('x'), Num(2)))),
+        #     1)
+        # self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
+        # self.assertEqual(avs, [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))]])
+
+        # f, avs = self.symb_exec_and_check_avs(
+        #     Fun(['x', 'y'],
+        #         [BaseType.INT, BaseType.INT],
+        #         Let("_", BaseType.BOOL, Assert(Eq(Var('x'), Num(0))),
+        #             Let('z', BaseType.INT, Mul(Var('x'), Num(2)),
+        #                 Assert(Gt(Var('z'), Num(1)))))),
+        #     2)
+        # self.assertSetEq(avs, [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))],
+        #                        [BinFExpr(SymVar('x', BaseType.INT), Num(0), '='),
+        #                         NegFExpr(BinFExpr(BinFExpr(SymVar('x', BaseType.INT),
+        #                                                    Num(2),
+        #                                                    '*'),
+        #                                           Num(1),
+        #                                           '>'))]])
+
+
+    def symb_exec_and_check_avs(fun, num_avs):
+        # todo actually check avs
+        return symb_exec(fun)
 
 if __name__ == "__main__":
     unittest.main()
