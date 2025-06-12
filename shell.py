@@ -1,14 +1,19 @@
-## Plan
+## Plan -- finish at 10.55/11
+#
+# 0. Recap yesterday
+#    Simple language, arithmetic, conditionals, assertions
+#    ---> we can find bugs with symbexec! :)
+#         even there, we had to make hard choices to trade off soundness and practicality :(
 #
 # 1. What is the shell
 #    Shell prevalance
 #    What kinds of programs can we write in the shell?
 #    Salient features of the shell
 #      - Commands
+#      - Filesystem effects
 #      - Strings everywhere
 #      - Expansion, words, word splitting
 #      - Environment variables
-#      - Filesystem effects
 #      - Expansion and evaluation interleaved
 #    What kinds of bugs arise in the shell?
 #      - referencing undefined vars --- echo $PAHT
@@ -16,9 +21,14 @@
 #      - Filesystem state mismanagement, dangerous effects as a result of ^ --- rm $1 // rm $1; ...; do-work $1
 #
 # 2. Ok, so all kinds of things can go wrong. We're here to talk about how symbexec can help us to find these kinds of bugs.
-# 3. Start with the regular interpreter.
-#    5min, discussion w/ neighbors: what's fundamentally different about this lang, basically the same as before?
+#    Just like before, we'll start by understanding the regular semantics of the language with an interpreter
+#
+# ------------------
+#
+# 3. 5min, discussion w/ neighbors: what's fundamentally different about this lang, basically the same as before?
 # 4. Write interpreter
+#
+# ------------------ got to here
 # 5. Now let's think about symbexec
 #    5-10min, discussion w/ neighbors: what do we have to do differently here? Brainstorm problems, sketch solutions
 
@@ -285,7 +295,7 @@ class EC(NamedTuple):
 
 # A SymbEnv is an Env where values are Formulas, ie dict[str, Formula]
 # A SymbStore is a Store where values are Formulas, ie dict[i, Formula]
-# A SymbFS is a Store where keys are Formulas and values are FileStates, ie dict[Formula, FileState]
+# A SymbFS is a dictionary where keys are Formulas and values are FileStates, ie dict[Formula, FileState]
 
 # An AssertionViolations is a list[tuple['ConstraintSet', 'SymbFS']]
 
