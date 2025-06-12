@@ -49,6 +49,11 @@ class BoolOp(NamedTuple): # and or xor b=
     op: Callable[[bool, bool], bool]
     op_name: str
 
+class If(NamedTuple):
+    tst: 'Expr'
+    thn: 'Expr'
+    els: 'Expr'
+
 class Assert(NamedTuple):
     tst: 'Expr'
 
@@ -144,6 +149,16 @@ def interp(e: 'Expr', env: 'Env') -> 'Value':
                 raise AssertionFailure(f"Assertion failed: {e}")
             return tst_v
 
+        case If(tst, thn, els):
+            tst_v = interp(tst, env)
+            match tst_v:
+                case Bool(True):
+                    return interp(thn, env)
+                case Bool(False):
+                    return interp(els, env)
+                case _:
+                    raise Exception("Bad program")
+
         case _:
             raise Exception(f"Unknown expr {e}")
 
@@ -222,7 +237,7 @@ class NegFExpr(NamedTuple):
 # A SymbResult is a tuple of
 # 'Formula',
 # 'PathCondition',
-# list['ConstraintSet']
+# list['PathCondition']
 
 def symb_exec_v1(fun: 'Fun') -> 'Formula':
     for t in fun.anns:
@@ -254,7 +269,7 @@ def symb_interpN(es: list['Expr'],
 def symb_interp(e: 'Expr',
                 env: 'SymbEnv',
                 pathcond: 'PathCondition',
-                avs: list['ConstraintSet']) -> 'SymbResult':
+                avs: list['PathCondition']) -> 'SymbResult':
     match e:
         case Num(n):
             # return e
@@ -354,6 +369,32 @@ def symb_interp(e: 'Expr',
                 # The assertion must succeed
                 return formula, pc2 + [formula], avs2
 
+        case If(tst, thn, els):
+            # tst_v = interp(tst, env)
+            # match tst_v:
+            #     case Bool(True):
+            #         return interp(thn, env)
+            #     case Bool(False):
+            #         return interp(els, env)
+            #     case _:
+            #         raise Exception("Bad program")
+            #
+            # Seq(If(..., then, else),
+            #    Assert(...))
+            tst_formula, pc2, avs2 = symb_interp(tst, env, pathcond, avs)
+            result_thn = None
+            result_els = None
+            pc_thn = None
+            pc_els = None
+            avs_thn = []
+            avs_els = []
+            if satisfiable(pc2 + [tst_formula]):
+                result_thn, pc_thn, avs_thn = symb_interp(thn, env, pc2 + [tst_formula], avs2)
+            if satisfiable(pc2 + [NegFExpr(tst_formula)]):
+                result_els, pc_els, avs_els = symb_interp(els, env, pc2 + [NegFExpr(tst_formula)], avs2)
+            assert result_thn is not None or result_els is not None
+            return (result_thn, pc_thn, avs_thn + avs_els) if result_thn is not None \
+                else (result_els, pc_els, avs_thn + avs_els)
 
         case _:
             raise Exception(f"Unknown expr {e}")
@@ -369,6 +410,6 @@ def get_model(constraints):
     varmap = {}
     s = z3.Solver()
     s.add(*[formula.make_z3(varmap) for formula in constraints])
-    assert s.check() != z3.unsat
+    assert s.check() == z3.sat
     return s.model()
 

@@ -47,12 +47,24 @@ class TestInterp(unittest.TestCase):
             {}),
                          interp(Mul(Num(2), Num(5)), {}))
 
-        # self.assertEqual(interp(
-        #     Let("omega", FunType([BaseType.INT, BaseType.INT],
-        #                          BaseType.INT),
-        #         Fun(["x"], [BaseType.INT], App(Var("x"), Var("x"))),
-        #         App(Var("omega"), Var("omega")))),
-        #                  Num(0))
+        # Ideas:
+        # Intra-procedural strategy where we basically approximate the results of function calls with new symbolic vars
+        # Gas=1000: don't run too long, set a timeout
+        # Don't recur into a function we're already inside (don't go down recursive self calls, maybe simplest?)
+        # Never symbolic interpret the same code twice if the pathconditions are the same
+        #
+        # Detect guaranteed infinite loops and stop
+        self.assertEqual(symb_exec(
+            Fun(["a"],
+                [BaseType.INT],
+                Let("omega", FunType([BaseType.INT, BaseType.INT],
+                                     BaseType.INT),
+                    Fun(["x"], [BaseType.INT],
+                        If(Stop?,
+                           answer,
+                           App(Var("x"), Var("x")))),
+                    App(Var("omega"), Var("omega"))))),
+                         Num(0))
 
 
         self.assertEqual(interp(App(Let("x", BaseType.INT, Num(5),
@@ -221,7 +233,7 @@ class TestInterp(unittest.TestCase):
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
         self.assertEqual(assertion_violation_pathconds,
 
-                         )
+                         [])
 
         f, assertion_violation_pathconds = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
@@ -232,7 +244,7 @@ class TestInterp(unittest.TestCase):
         self.assertEqual(f, BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'))
         self.assertEqual(assertion_violation_pathconds,
 
-                         )
+                         [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))]])
 
         f, avs = self.symb_exec_and_check_avs(
             Fun(['x', 'y'],
@@ -242,7 +254,10 @@ class TestInterp(unittest.TestCase):
                         Assert(Gt(Var('z'), Num(1)))))),
             2)
         self.assertSetEq(avs,
-                         )
+                         [[NegFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(0), '='))],
+
+                          [BinFExpr(SymVar('x', BaseType.INT), Num(0), '='),
+                           NegFExpr(BinFExpr(BinFExpr(SymVar('x', BaseType.INT), Num(2), '*'), Num(1), '>'))]])
 
         f, avs = self.symb_exec_and_check_avs(
             Fun(['I'],
@@ -255,54 +270,76 @@ class TestInterp(unittest.TestCase):
                 )),
             1)
         self.assertSetEq(avs,
-                         )
+                         [[NegFExpr(BinFExpr(SymVar('I', BaseType.INT), Num(5), '<'))]])
 
 
 
 
         # --- If ---
-        # f, avs = self.symb_exec_and_check_avs(
-        #     Fun(['a', 'b'],
-        #         [BaseType.INT, BaseType.INT],
-        #         If(Lt(Var('a'), Var('b')),
-        #            Assert(Neq(Var('a'), Var('b'))),
-        #            Bool(False))),
-        #      )
-        # f, avs = self.symb_exec_and_check_avs(
-        #     Fun(['a', 'b'],
-        #         [BaseType.INT, BaseType.INT],
-        #         If(Lt(Var('a'), Var('b')),
-        #            Bool(False),
-        #            Assert(Neq(Var('a'), Var('b'))))),
-        #      )
-        # f, avs = self.symb_exec_and_check_avs(
-        #     Fun(['a', 'b'],
-        #         [BaseType.INT, BaseType.INT],
-        #         If(Lt(Var('a'), Var('b')),
-        #            If(Eq(Var('a'), Var('b')),
-        #               Assert(Eq(Var('a'), Num(0))),
-        #               Bool(False)),
-        #            Bool(False))),
-        #      )
-        # f, avs = self.symb_exec_and_check_avs(
-        #     Fun(['a', 'b'],
-        #         [BaseType.INT, BaseType.INT],
-        #         If(Lt(Var('a'), Var('b')),
-        #            If(Eq(Var('a'), Var('b')),
-        #               Bool(False),
-        #               Assert(Eq(Var('a'), Num(0)))),
-        #            Bool(False))),
-        #      )
-        # f, avs = self.symb_exec_and_check_avs(
-        #     Fun(['a', 'b'],
-        #         [BaseType.INT, BaseType.INT],
-        #         Seq(If(Lt(Var('a'), Var('b')),
-        #                Assert(Eq(Var('b'), Num(0))),
-        #                Bool(False)),
-        #             If(Gt(Var('b'), Num(5)),
-        #                Bool(False),
-        #                Assert(Eq(Var('a'), Num(5)))))),
-        #      )
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   Assert(Neq(Var('a'), Var('b'))),
+                   Bool(False))),
+            0)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   Bool(False),
+                   Assert(Neq(Var('a'), Var('b'))))),
+             1)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   If(Eq(Var('a'), Var('b')),
+                      Assert(Eq(Var('a'), Num(0))),
+                      Bool(False)),
+                   Bool(False))),
+             0)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                If(Lt(Var('a'), Var('b')),
+                   If(Eq(Var('a'), Var('b')),
+                      Bool(False),
+                      Assert(Eq(Var('a'), Num(0)))),
+                   Bool(False))),
+             1)
+        f, avs = self.symb_exec_and_check_avs(
+            Fun(['a', 'b'],
+                [BaseType.INT, BaseType.INT],
+                Seq(If(Lt(Var('a'), Var('b')),
+                       Assert(Eq(Var('b'), Num(0))),
+                       Bool(False)),
+                    If(Gt(Var('b'), Num(5)),
+                       Bool(False),
+                       Assert(Eq(Var('a'), Num(5)))))),
+            # We can...
+            #
+            # take the then branch of the first conditional. In that case...
+            #   Hit the first assert. It could...
+            #   Pass:
+            #     Then we can take the then branch of the second conditional:
+            #       all good
+            #     Then we can take the else branch of the second conditional:
+            #       a < b & b = 0 & !(b > 5) && !(a = 5) -- possible 1
+            #    Fail:
+            #      a < b && !(b = 0) -- possible 1
+            #
+            # ======= unsoundness strikes again! We didn't explore this whole set of paths ======
+            # take the else branch of the first conditional. In that case...
+            #   Take the then branch of the second conditional. In that case...
+            #     Nothing happened.
+            #   Take the else branch of the second conditional. In that case...
+            #     Hit second assert. It could...
+            #     !(a < 5) & !(b > 5) & !(a = 5) -- possible 1
+            #
+            #
+            # Note to self the sound answer is 3, but we're not sound :)
+            2)
 
 
 if __name__ == "__main__":
