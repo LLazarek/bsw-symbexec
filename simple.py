@@ -22,16 +22,18 @@
 # 17. Discussion: what do we need to do about symbolic if? Recall branching picture from board
 # 18. Write some tests for symbolic if (pre-written programs, fill avs)
 # 17. Implement symbolic if,
-# --- Run tests
+# --- Run tests: Interesting point in last test: weakness of our unsound design!
 #
 # 18. Recap weaknesses of our if implementation
+# ---> DONE ,,
 # 18. Exercise! Take 5-10min. Discuss with neighbors, what are some approaches to fix the soundness problem with `if`? Problems? Tradeoffs?
 #     --> interpretation operates over multiple possible program states, and returns multiple possible results, all in parallel
 #     --> just changing return type to multiple, cps'ing?
+# ---> DONE ^^
 # 18. (if time?) Exercise! Take 10-15min. A terminating program can cause `symb_interp` to run forever. Write such a program, and then propose ideas to address it.
 #
 #
-# ---------- break, next state ----------
+# ---------- if time, state ----------
 # 1. Boxes, get, set, seq, data defs
 # 2. Finish pre-written tests
 # 3. 
@@ -438,15 +440,19 @@ def symb_interp(e: 'Expr', env: 'SymbEnv', store: 'SymbStore',
             result_thn = None
             s3_thn = None
             pc3_thn = None
-            if satisfiable(pc2 + [NegFExpr(tst_formula)]):
-                result_els, s3_els, pc3_els, avs_els = symb_interp(els, env, s2,
-                                                                   pc2 + [NegFExpr(tst_formula)])
             if satisfiable(pc2 + [tst_formula]):
                 result_thn, s3_thn, pc3_thn, avs_thn = symb_interp(thn, env, s2,
                                                                    pc2 + [tst_formula])
+            if satisfiable(pc2 + [NegFExpr(tst_formula)]):
+                result_els, s3_els, pc3_els, avs_els = symb_interp(els, env, s2,
+                                                                   pc2 + [NegFExpr(tst_formula)])
             assert result_thn is not None or result_els is not None, f"Impossible? Neither case of an if are satisfiable?"
+
+            
             # return (result_thn, s3_thn, pc3_thn, avs_thn + avs_els) if result_thn \
             #     else (result_els, s3_els, pc3_els, avs_thn + avs_els)
+
+            
             global take_els
             if (take_els and result_els is not None) or result_thn is None:
                 take_els = False

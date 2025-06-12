@@ -10,17 +10,13 @@ import z3
 # 5) if [$1 != ""]; then rm -rf $1/; fi -- safe
 
 
+# What's missing?
+# Expansion here is waay simplified, missing: FS-based expansion (globs), command substitutions
+# Not modeling command output
+# Not modeling path aliasing!!
 
-# A Word is one of
-class Str(NamedTuple):
-    s: str
-    def make_z3(self, _):
-        return self.s
-class Var(NamedTuple):
-    name: str
-class Concat(NamedTuple):
-    l: 'Word'
-    r: 'Word'
+
+
 
 # A Script is one of
 class Cmd(NamedTuple):
@@ -38,8 +34,22 @@ class If(NamedTuple):
     els: 'Script'
 
 
+# A Word is one of
+class Str(NamedTuple):
+    s: str
+    def make_z3(self, _):
+        return self.s
+class Var(NamedTuple):
+    name: str
+class Concat(NamedTuple):
+    l: 'Word'
+    r: 'Word'
+
+
+
 class Test(NamedTuple):
     expr: 'TestExpr'
+
 # A TestExpr is one of
 class StrCmp(NamedTuple):
     l: 'Word'
@@ -61,82 +71,70 @@ class FileCheck(NamedTuple):
 # An Env is a dict[str, Value]
 # A Store is a dict[int, Value]
 
-def interpN(es, env, store, k):
+def interpN(es, env, k):
     ec = 0
     for e in es:
-        ec, env, store = interp(e, env, store)
-    return k(ec, env, store)
+        ec, env = interp(e, env)
+    return k(ec, env)
 
 
-# What's missing?
-# Expansion here is waay simplified, missing: FS-based expansion (globs), command substitutions
-# Not modeling command output
-# Not modeling path aliasing!!
-
-
-def interp(s: 'Script', env: 'Env', store: 'Store') -> tuple[int, 'Env', 'Store']:
+def interp(s: 'Script', env: 'Env') -> tuple[int, 'Env']:
     match e:
         case Cmd(binary, args):
-            expanded_args = [expand(arg, env, store) for arg in args]
-            exit_code = run_binary(binary, expanded_args, store)
-            return exit_code, env, store
+            expanded_args = [expand(arg, env) for arg in args]
+            exit_code = run_binary(binary, expanded_args)
+            return exit_code, env
 
         case Seq(s1, s2):
-            return interpN([s1, s2], env, store, tuple)
+            return interpN([s1, s2], env, tuple)
 
         case Set(name, expr):
-            expanded_str = expand(expr, env, store)
-            if name not in env:
-                ref = malloc(store)
-                env2 = bind(env, [name], [ref])
-            else:
-                ref = lookup(env, name)
-                env2 = env
-            s2 = store_set(store, ref, expanded_str)
-            return 0, env2, s2
+            expanded_str = expand(expr, env)
+            env2 = bind(env, [name], [expanded_str])
+            return 0, env2
 
         case If(tst, thn, els):
             match tst:
                 case Test(expr):
-                    if eval_test(expr, env, store):
-                        return interp(thn, env, s)
+                    if eval_test(expr, env):
+                        return interp(thn, env)
                     else:
-                        return interp(els, env, s)
+                        return interp(els, env)
                 case _:
-                    ec, env2, s2 = interp(tst, env, store)
+                    ec, env2 = interp(tst, env)
                     if ec == 0:
-                        return interp(thn, env2, s2)
+                        return interp(thn, env2)
                     else:
-                        return interp(els, env2, s2)
+                        return interp(els, env2)
 
-def eval_test(expr, env, store):
+def eval_test(expr, env):
     match expr:
         case StrCmp(l, r, op, op_name):
-            return op(expand(l, env, store),
-                      expand(r, env, store))
+            return op(expand(l, env),
+                      expand(r, env))
         case BoolOp(l, r, op, op_name):
-            return op(eval_test(l, env, store),
-                      eval_test(r, env, store))
+            return op(eval_test(l, env),
+                      eval_test(r, env))
         case Neg(inner):
-            return not eval_test(inner, env, store)
+            return not eval_test(inner, env)
         case FileCheck(path, state):
-            expanded_path = expand(path, env, store)
+            expanded_path = expand(path, env)
             return True # todo
 
 def run_binary(binary, args, store):
     return 0 # todo
 
-def expand(word: 'Word', env: 'Env', store: 'Store') -> Str:
+def expand(word: 'Word', env: 'Env') -> Str:
     match word:
         case Str(s):
             return word
         case Var(name):
             if name in env:
-                ref = env[name]
-                return store_lookup(store, ref)
-            return Str("") # Shell fun!
+                return env[name]
+            else:
+                return Str("") # Shell fun!
         case Concat(l, r):
-            return expand(l) + expand(r)
+            return expand(l, env) + expand(r, env)
 
 class BaseType(Enum):
     INT = 1
@@ -153,15 +151,6 @@ def lookup(env, name):
         raise Exception(f"Unbound variable {name}")
 def bind(env, names, vals):
     return env | dict(zip(names, vals))
-def malloc(store):
-    if not store:
-        return Ref(0)
-    else:
-        return Ref(max(store.keys()) + 1)
-def store_lookup(store, ref):
-    return store[ref.i]
-def store_set(store, ref, newv):
-    return store | {ref.i: newv}
 
 
 
@@ -191,21 +180,16 @@ class FSPredicate(NamedTuple):
     state: FileState
     def make_z3(self, varmap):
         return z3_fs_state_funs[self.state](self.path.make_z3(varmap))
+
 class Bool(NamedTuple):
     b: bool
     def make_z3(self, varmap):
         return self.b
+
 class SymVar(NamedTuple):
     name: str
     t: BaseType
 
-    # _sort_mapping = {BaseType.INT: 'Int',
-    #                  BaseType.BOOL: 'Bool',
-    #                  BaseType.STR: 'String'}
-    # def smt_declaration(self):
-    #     return f'(declare-const {name} {_sort_mapping[t]})'
-    # def smt(self):
-    #     return name
     def make_z3(self, varmap):
         if self.name not in varmap:
             match self.t:
@@ -216,6 +200,7 @@ class SymVar(NamedTuple):
                 case BaseType.STR:
                     varmap[self.name] = z3.String(self.name)
         return varmap[self.name]
+
 class BoolFExpr(NamedTuple):
     l: 'Formula|SymString'
     r: 'Formula|SymString'
@@ -235,17 +220,12 @@ class BoolFExpr(NamedTuple):
                 return z3.Or(lmade, rmade)
             case _:
                 raise Exception(f"Unhandled smt conversion of op {op}")
+
 class NegFExpr(NamedTuple):
     fe: 'Formula'
 
-    # def smt(self):
-    #     return f'(not {fe.smt()})'
     def make_z3(self, varmap):
         return z3.Not(self.fe.make_z3(varmap))
-
-
-
-
 
 
 # A SymbEC is one of
@@ -256,7 +236,6 @@ class EC(NamedTuple):
 # A SymbResult is
 # tuple['SymbEC',
 #       'SymbEnv',
-#       'SymbStore',
 #       'SymbFS',
 #       'ConstraintSet', # current pathcond
 #       list['ConstraintSet'] # pathconds of assertion violations
@@ -267,10 +246,9 @@ class EC(NamedTuple):
 # A SymbFS is a Store where keys are Formulas and values are FileStates, ie dict[Formula, FileState]
 
 
-def symb_interpN(es: list['Script'], env: 'SymbEnv', store: 'SymbStore', fs: 'SymbFS', pathcond: 'ConstraintSet',
+def symb_interpN(es: list['Script'], env: 'SymbEnv', fs: 'SymbFS', pathcond: 'ConstraintSet',
                  k: Callable[[list['SymbEC'],
                               'SymbEnv',
-                              'SymbStore',
                               'SymbFS',
                               'ConstraintSet',
                               list['ConstraintSet']],
@@ -278,20 +256,20 @@ def symb_interpN(es: list['Script'], env: 'SymbEnv', store: 'SymbStore', fs: 'Sy
     ecs = []
     violations = []
     for script in es:
-        ec, store, env, fs, pathcond, avs = symb_interp(script, env, store, fs, pathcond)
+        ec, env, fs, pathcond, avs = symb_interp(script, env, fs, pathcond)
         ecs.append(formula)
         violations.extend(avs)
-    return k(ecs, env, s, fs, pathcond, violations)
+    return k(ecs, env, fs, pathcond, violations)
 
 
 neg_invariants = [FSPredicate('/', FileState.Deleted)]
 
 last_ec_id = 0
-def symb_interp(s: 'Script', env: 'SymbEnv', store: 'SymbStore', fs: 'SymbFS', pathcond: 'ConstraintSet') -> 'SymbResult':
+def symb_interp(s: 'Script', env: 'SymbEnv', fs: 'SymbFS', pathcond: 'ConstraintSet') -> 'SymbResult':
     global last_ec_id
     match s:
         case Cmd(binary, args):
-            expanded_args = [symb_expand(arg, env, store) for arg in args]
+            expanded_args = [symb_expand(arg, env) for arg in args]
             preconds, effects = lookup_spec(binary, expanded_args)
             avs = []
             ec = SymVar(f'ec_{last_ec_id}', BaseType.INT)
@@ -307,90 +285,84 @@ def symb_interp(s: 'Script', env: 'SymbEnv', store: 'SymbStore', fs: 'SymbFS', p
             else: # Could fail or succeed
                 fs2 = effects(fs)
                 avs = [pathcond] if satisfiable(pathcond + neg_invariants, fs2) else []
-            return ec, env, store, fs2, pathcond, avs
+            return ec, env, fs2, pathcond, avs
 
         case Seq(s1, s2):
-            return symb_interpN([s1, s2], env, store, fs, pathcond,
-                                lambda ecs, env, store, fs, pathcond, avs: (ecs[1], env, store, fs, pathcond, avs))
+            return symb_interpN([s1, s2], env, fs, pathcond,
+                                lambda ecs, env, fs, pathcond, avs: (ecs[1], env, fs, pathcond, avs))
 
         case Set(name, expr):
-            expanded_formula = sym_expand(expr, env, store)
-            if name not in env:
-                ref = malloc(store)
-                env2 = bind(env, [name], [ref])
-            else:
-                ref = lookup(env, name)
-                env2 = env
-            s2 = store_set(store, ref, expanded_formula)
-            return 0, env2, s2
+            expanded_formula = sym_expand(expr, env)
+            env2 = bind(env, [name], [expanded_str])
+            return 0, env2
 
         case If(tst, thn, els):
             match tst:
                 case Test(expr):
-                    formula = symb_eval_test(expr, env, store)
+                    formula = symb_eval_test(expr, env)
                     if not satisfiable(pathcond + [formula], fs): # Guaranteed to fail
-                        ec3, env3, s3, fs3, pc3, avs3 = symb_interp(els, env, store, fs, pathcond + [NegFExpr(formula)])
-                        return ec3, env3, s3, fs3, pc3, avs3
+                        ec3, env3, fs3, pc3, avs3 = symb_interp(els, env, fs, pathcond + [NegFExpr(formula)])
+                        return ec3, env3, fs3, pc3, avs3
                     elif not satisfiable(pathcond + [NegFExpr(formula)], fs): # Guaranteed to succeed
-                        ec3, env3, s3, fs3, pc3, avs3 = symb_interp(thn, env, store, fs, pathcond + [formula])
-                        return ec3, env3, s3, fs3, pc3, avs3
+                        ec3, env3, fs3, pc3, avs3 = symb_interp(thn, env, fs, pathcond + [formula])
+                        return ec3, env3, fs3, pc3, avs3
                     else: # Could fail or succeed
-                        _, _, _, _, _, avs_els = symb_interp(els, env, store, fs, pathcond + [NegFExpr(formula)])
-                        ec3, env3, s3, fs3, pc3, avs_thn = symb_interp(thn, env, store, fs, pathcond + [formula])
-                        return ec3, env3, s3, fs3, pc3, avs_thn + avs_els
+                        _, _, _, _, avs_els = symb_interp(els, env, fs, pathcond + [NegFExpr(formula)])
+                        ec3, env3, fs3, pc3, avs_thn = symb_interp(thn, env, fs, pathcond + [formula])
+                        return ec3, env3, fs3, pc3, avs_thn + avs_els
                 case _:
-                    ec, env2, s2, fs2, pc2, avs2 = symb_interp(tst, env, store, fs, pathcond)
+                    ec, env2, s2, fs2, pc2, avs2 = symb_interp(tst, env, fs, pathcond)
                     match ec:
                         case EC(0):
-                             ec3, env3, s3, fs3, pc3, avs3 = symb_interp(thn, env2, s2, fs2, pc2)
-                             return ec3, env3, s3, fs3, pc3, avs2 + avs3
+                             ec3, env3, fs3, pc3, avs3 = symb_interp(thn, env2, fs2, pc2)
+                             return ec3, env3, fs3, pc3, avs2 + avs3
                         case EC(_):
-                             ec3, env3, s3, fs3, pc3, avs3 = symb_interp(els, env2, s2, fs2, pc2)
-                             return ec3, env3, s3, fs3, pc3, avs2 + avs3
+                             ec3, env3, fs3, pc3, avs3 = symb_interp(els, env2, fs2, pc2)
+                             return ec3, env3, fs3, pc3, avs2 + avs3
                         case SymVar(_, _):
-                             _, _, _, _, _, avs3 = symb_interp(els, env2, s2, fs2, pc2)
-                             ec4, env4, s4, fs4, pc4, avs4 = symb_interp(thn, env2, s2, fs2, pc2)
-                             return ec4, env4, s4, fs4, pc4, avs2 + avs3 + avs4
+                             _, _, _, _, avs3 = symb_interp(els, env2, fs2, pc2)
+                             ec4, env4, fs4, pc4, avs4 = symb_interp(thn, env2, fs2, pc2)
+                             return ec4, env4, fs4, pc4, avs2 + avs3 + avs4
 
 
-def symb_eval_test(expr, env, store):
+def symb_eval_test(expr, env):
     match expr:
         case StrCmp(l, r, op, op_name):
-            expanded_l = symb_expand(l, env, store)
-            expanded_r = symb_expand(r, env, store)
+            expanded_l = symb_expand(l, env)
+            expanded_r = symb_expand(r, env)
             if isinstance(expanded_l, Str) and isinstance(expanded_r, Str):
                 return expanded_l == expanded_r
             else:
                 return BoolFExpr(expanded_l, expanded_r, op_name)
         case BoolOp(l, r, op, op_name):
-            l_formula = symb_eval_test(l, env, store)
-            r_formula = symb_eval_test(r, env, store)
+            l_formula = symb_eval_test(l, env)
+            r_formula = symb_eval_test(r, env)
             if isinstance(l_formula, Bool) and isinstance(r_formula, Bool):
                 return op(l_formula.b, r_formula.b)
             else:
                 return BoolFExpr(l_formula, r_formula, op_name)
         case Neg(inner):
-            inner_formula = symb_eval_test(inner, env, store)
+            inner_formula = symb_eval_test(inner, env)
             if isinstance(inner_formula, Bool):
                 return not inner_formula.b
             else:
                 return NegFExpr(inner_formula)
         case FileCheck(path, state):
-            path_formula = symb_expand(path, env, store)
+            path_formula = symb_expand(path, env)
             return FSPredicate(path_formula, state)
 
-def symb_expand(word: 'Word', env: 'SymbEnv', store: 'SymbStore') -> 'SymString':
+def symb_expand(word: 'Word', env: 'SymbEnv') -> 'SymString':
     match word:
         case Str(s):
             return word
         case Var(name):
             if name in env:
-                ref = env[name]
-                return store_lookup(store, ref)
-            return SymVar(name, BaseType.STR)
+                return env[name]
+            else:
+                return SymVar(name, BaseType.STR)
         case Concat(l, r):
-            le = symb_expand(l)
-            re = symb_expand(r)
+            le = symb_expand(l, env)
+            re = symb_expand(r, env)
             if isinstance(le, Str) and isinstance(re, str):
                 return Str(le.s + re.s)
             else:
@@ -433,7 +405,7 @@ def lookup_spec(binary, arg_symstrs) -> tuple[list['Formula'], Callable[['FS'], 
 
 
 def symb_exec(script: 'Script') -> list['ConstraintSet']:
-    ec, env, store, fs, pc, avs = symb_interp(script, {}, {}, {}, [])
+    ec, env, fs, pc, avs = symb_interp(script, {}, {}, [])
     return avs
 
 
