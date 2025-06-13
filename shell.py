@@ -1,24 +1,13 @@
 ## Plan -- finish at 12.05
 #
-# 0. Recap what we covered: the shell lang, our interpreter,
-# 1. Write a few tests of bugs we'd like to discover
-#    rm $myfile; cat $myfile --- buggy
-#    rm $myfile; cat $other --- OK
-#    rm $myfile; other=$myfile; cat $other --- buggy
-#    rm $myfile; other=$myfile; if [ -f $other ]; cat $other; else echo no; fi --- OK
-# 2. Talk about commands in the abstract: what do they do? When might they go wrong?
-#    --> idea of modular specs summarizing these things
-# 3. define lookup_spec
-# 3. provide symb_expand
-# 4. Exercise: Take 15min, draft the implementation of the cmd case in pseudocode
-# 5.   Come back together, discuss our approaches (show mine)
-# 6. Exercise: Take 15min, draft the implementation of the If case
-# 7.   Come back together, discuss approaches (show mine)
-# 8. Implementing satisfiable with our FS model
-# 9. Running our tests, talking about them
-# 10. Discussion about weaknesses of what we've done
-# 11. Discussion about even more challenges in the real shell that we have ignored
-# 12. Rest of the time, play around with our engine, tweak it and see what happens
+#
+# Things we need to have for z3 stuff:
+# - recap our fs state model
+# - FS state functions
+# - FSPredicate encoding, with pathmap thingy
+# - FS rules
+# - `encode_z3_fs`
+# - Implement satisfiable
 
 from enum import Enum
 from typing import NamedTuple, Callable
@@ -385,8 +374,16 @@ def symb_interp(s: 'Script',
                         ec3, env3, fs3, pc3, avs3 = symb_interp(thn, env, fs, pathcond + [formula], avs)
                         return ec3, env3, fs3, pc3, avs3
                     else: # Could fail or succeed
-                        _, _, _, _, avs_els = symb_interp(els, env, fs, pathcond + [NegFExpr(formula)], avs)
-                        ec3, env3, fs3, pc3, avs_thn = symb_interp(thn, env, fs, pathcond + [formula], avs)
+                        _, _, _, _, avs_els = symb_interp(els,
+                                                          env,
+                                                          fs,
+                                                          pathcond + [NegFExpr(formula)],
+                                                          avs)
+                        ec3, env3, fs3, pc3, avs_thn = symb_interp(thn,
+                                                                   env,
+                                                                   fs,
+                                                                   pathcond + [formula],
+                                                                   avs)
                         return ec3, env3, fs3, pc3, avs_thn + avs_els
                 case _:
                     ec, env2, s2, fs2, pc2, avs2 = symb_interp(tst, env, fs, pathcond, avs)
@@ -397,9 +394,17 @@ def symb_interp(s: 'Script',
                         case EC(_):
                              ec3, env3, fs3, pc3, avs3 = symb_interp(els, env2, fs2, pc2, avs2)
                              return ec3, env3, fs3, pc3, avs3
-                        case SymVar(_, _):
-                             _, _, _, _, avs3 = symb_interp(els, env2, fs2, pc2, avs2)
-                             ec4, env4, fs4, pc4, avs4 = symb_interp(thn, env2, fs2, pc2, avs3)
+                        case symvar:
+                             _, _, _, _, avs3 = symb_interp(els,
+                                                            env2,
+                                                            fs2,
+                                                            pc2 + [BoolFExpr(symvar, EC(0), '!=')],
+                                                            avs2)
+                             ec4, env4, fs4, pc4, avs4 = symb_interp(thn,
+                                                                     env2,
+                                                                     fs2,
+                                                                     pc2 + [BoolFExpr(symvar, EC(0), '=')],
+                                                                     avs3)
                              return ec4, env4, fs4, pc4, avs4
 
 
@@ -449,7 +454,7 @@ def symb_expand(word: 'Word', env: 'SymbEnv') -> 'SymString':
             raise Exception(f"Unexpected word: {word!r}")
 
 def lookup_spec(binary, arg_symstrs) -> tuple[list['Formula'], # preconditions
-                                              Callable[['FS'], 'FS'], # FS effects
+                                              Callable[['SymbFS'], 'SymbFS'], # FS effects
                                               list['Formula']]: # postconditions
     match binary:
         case 'echo':
