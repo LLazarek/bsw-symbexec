@@ -1,4 +1,4 @@
-## Plan -- finish at 10.55/11
+## Plan -- finish at 12.05
 #
 # 0. Recap what we covered: the shell lang, our interpreter,
 # 1. Write a few tests of bugs we'd like to discover
@@ -366,8 +366,8 @@ def symb_interp(s: 'Script',
             return ec, env, fs2, pathcond, avs
 
         case Seq(s1, s2):
-            return symb_interpN([s1, s2], env, fs, pathcond, avs,
-                                lambda ecs, env, fs, pathcond, avs: (ecs[1], env, fs, pathcond, avs))
+            _, env2, fs2, pc2, avs2 = symb_interp(s1, env, fs, pathcond, avs)
+            return symb_interp(s2, env2, fs2, pc2, avs2)
 
         case Set(name, expr):
             expanded_formula = symb_expand(expr, env)
