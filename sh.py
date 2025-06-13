@@ -153,6 +153,114 @@ def bind(env, names, vals):
 
 
 
+
+
+
+
+### Annoying Z3 stuff
+_path_names = 0
+def fresh_path_constant_var_name():
+    global _path_names
+    _path_names += 1
+    return f'_const_path_{_path_names}'
+
+class rawZ3(NamedTuple):
+    z3: any
+
+    def make_z3(self, _, _2):
+        return self.z3
+
+
+### ------------------
+
+
+
+
+
+
+
+# A SymString is one of
+# Str
+# SymVar of type STR
+class SymConcat(NamedTuple):
+    l: 'SymString'
+    r: 'SymString'
+    def make_z3(self, varmap, pathmap):
+        lmade = self.l.make_z3(varmap, pathmap)
+        rmade = self.r.make_z3(varmap, pathmap)
+        return lmade + rmade
+
+
+
+# A Formula is one of
+class FSPredicate(NamedTuple):
+    path: 'SymString'
+    state: FileState
+    def make_z3(self, varmap, pathmap):
+        statef = z3_fs_state_funs[self.state]
+        if isinstance(self.path, Str):
+            if self.path.s not in pathmap:
+                fresh_const_path_var = z3.String(fresh_path_constant_var_name())
+                pathmap[self.path.s] = fresh_const_path_var
+            return statef(pathmap[self.path.s])
+        else:
+            return statef(self.path.make_z3(varmap, pathmap))
+
+class Bool(NamedTuple):
+    b: bool
+    def make_z3(self, varmap, pathmap):
+        return self.b
+
+class SymVar(NamedTuple):
+    name: str
+    t: BaseType
+
+    def make_z3(self, varmap, pathmap):
+        if self.name not in varmap:
+            match self.t:
+                case BaseType.INT:
+                    varmap[self.name] = z3.Int(self.name)
+                case BaseType.BOOL:
+                    varmap[self.name] = z3.Bool(self.name)
+                case BaseType.STR:
+                    varmap[self.name] = z3.String(self.name)
+        return varmap[self.name]
+
+class BoolFExpr(NamedTuple):
+    l: 'Formula|SymString'
+    r: 'Formula|SymString'
+    op: str
+
+    def make_z3(self, varmap, pathmap):
+        lmade = self.l.make_z3(varmap, pathmap)
+        rmade = self.r.make_z3(varmap, pathmap)
+        match self.op:
+            case '=':
+                return lmade == rmade
+            case '!=':
+                return lmade != rmade
+            case 'and':
+                return z3.And(lmade, rmade)
+            case 'or':
+                return z3.Or(lmade, rmade)
+            case _:
+                raise Exception(f"Unhandled smt conversion of op {op}")
+
+class NegFExpr(NamedTuple):
+    fe: 'Formula'
+
+    def make_z3(self, varmap, pathmap):
+        return z3.Not(self.fe.make_z3(varmap, pathmap))
+
+def Or(fexprs):
+    fexpr = Bool(False)
+    for fe in fexprs:
+        fexpr = BoolFExpr(fexpr, fe, 'or')
+    return fexpr
+
+
+
+
 # A SymbResult is
 # tuple['SymbEC',
 #       'SymbEnv',
@@ -170,15 +278,38 @@ def bind(env, names, vals):
 class EC(NamedTuple):
     n: int
 
-class FSPredicate(NamedTuple):
-    path: 'SymString'
-    state: FileState
-
+# An AssertionViolations is a list[tuple['ConstraintSet', 'SymbFS']]
 
 def symb_interp(s: 'Script',
                 env: 'SymbEnv',
                 fs: 'SymbFS',
                 pathcond: 'ConstraintSet',
                 avs: 'AssertionViolations') -> 'SymbResult':
+    match s:
+        case Cmd(binary, args):
 
+        case Seq(s1, s2):
 
+        case Set(name, expr):
+
+        case If(tst, thn, els):
+            todo
+
+def symb_expand(word: 'Word', env: 'SymbEnv') -> 'SymString':
+    match word:
+        case Str(s):
+            return word
+        case Var(name):
+            if name in env:
+                return env[name]
+            else:
+                return SymVar(name, BaseType.STR)
+        case Concat(l, r):
+            le = symb_expand(l, env)
+            re = symb_expand(r, env)
+            if isinstance(le, Str) and isinstance(re, Str):
+                return Str(le.s + re.s)
+            else:
+                return SymConcat(le, re)
+        case _:
+            raise Exception(f"Unexpected word: {word!r}")
