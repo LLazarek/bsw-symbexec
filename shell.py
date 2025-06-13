@@ -1,36 +1,24 @@
 ## Plan -- finish at 10.55/11
 #
-# 0. Recap yesterday
-#    Simple language, arithmetic, conditionals, assertions
-#    ---> we can find bugs with symbexec! :)
-#         even there, we had to make hard choices to trade off soundness and practicality :(
-#
-# 1. What is the shell
-#    Shell prevalance
-#    What kinds of programs can we write in the shell?
-#    Salient features of the shell
-#      - Commands
-#      - Filesystem effects
-#      - Strings everywhere
-#      - Expansion, words, word splitting
-#      - Environment variables
-#      - Expansion and evaluation interleaved
-#    What kinds of bugs arise in the shell?
-#      - referencing undefined vars --- echo $PAHT
-#      - unexpected expansions      --- ls $1 --> ls my great dir/file1.txt
-#      - Filesystem state mismanagement, dangerous effects as a result of ^ --- rm $1 // rm $1; ...; do-work $1
-#
-# 2. Ok, so all kinds of things can go wrong. We're here to talk about how symbexec can help us to find these kinds of bugs.
-#    Just like before, we'll start by understanding the regular semantics of the language with an interpreter
-#
-# ------------------
-#
-# 3. 5min, discussion w/ neighbors: what's fundamentally different about this lang, basically the same as before?
-# 4. Write interpreter
-#
-# ------------------ got to here
-# 5. Now let's think about symbexec
-#    5-10min, discussion w/ neighbors: what do we have to do differently here? Brainstorm problems, sketch solutions
+# 0. Recap what we covered: the shell lang, our interpreter,
+# 1. Write a few tests of bugs we'd like to discover
+#    rm $myfile; cat $myfile --- buggy
+#    rm $myfile; cat $other --- OK
+#    rm $myfile; other=$myfile; cat $other --- buggy
+#    rm $myfile; other=$myfile; if [ -f $other ]; cat $other; else echo no; fi --- OK
+# 2. Talk about commands in the abstract: what do they do? When might they go wrong?
+#    --> idea of modular specs summarizing these things
+# 3. define lookup_spec
+# 3. provide symb_expand
+# 4. Exercise: Take 15min, draft the implementation of the cmd case in pseudocode
+# 5.   Come back together, discuss our approaches (show mine)
+# 6. Exercise: Take 15min, draft the implementation of the If case
+# 7.   Come back together, discuss approaches (show mine)
+# 8. Implementing satisfiable with our FS model
+# 9. Running our tests, talking about them
+# 10. Discussion about weaknesses of what we've done
+# 11. Discussion about even more challenges in the real shell that we have ignored
+# 12. Rest of the time, play around with our engine, tweak it and see what happens
 
 from enum import Enum
 from typing import NamedTuple, Callable
@@ -325,7 +313,7 @@ def symb_interp(s: 'Script',
                 fs: 'SymbFS',
                 pathcond: 'ConstraintSet',
                 avs: 'AssertionViolations') -> 'SymbResult':
-    global last_ec_id
+    global last_ec_id, avs_only_must
     match s:
         case Cmd(binary, args):
             expanded_args = [symb_expand(arg, env) for arg in args]
@@ -352,8 +340,11 @@ def symb_interp(s: 'Script',
                 fs2 = effects(fs)
                 # Effects of execution
                 pathcond = pathcond + postconds
-                avs += [(bad_state_conditions, fs2)] \
-                    if satisfiable(pathcond + neg_invariants, fs2) else []
+                # if avs_only_must and not satisfiable(pathcond + [NegFExpr(c) for c in neg_invariants], fs2):
+                #     avs += [(pathcond + neg_invariants, fs2)]
+                # el
+                if satisfiable(pathcond + neg_invariants, fs2):
+                    avs += [(pathcond + neg_invariants, fs2)]
             else: # Could fail or succeed
                 print(f"  > could go either way")
                 # Precondition constraints that may fail
@@ -361,15 +352,15 @@ def symb_interp(s: 'Script',
                 ec = SymVar(f'_ec_{last_ec_id}', BaseType.INT)
                 last_ec_id += 1
                 # NOTE: unsound choice! Really we should explore both possibilities of
-                # cmd failing and succeeding, but we'll just assume it succeeded
+                # cmd failing and succeeding, but we'll just model that it succeeded
                 fs2 = effects(fs)
                 # Effects of execution
                 pathcond = pathcond + postconds
-                avs += [(bad_state_conditions, fs2)] \
-                    if satisfiable(pathcond + neg_invariants, fs2) else []
-                print(f"could neg invs be violated? {pathcond + neg_invariants}, fs {fs2}")
+                # if avs_only_must and not satisfiable(pathcond + [NegFExpr(c) for c in neg_invariants], fs2):
+                #     avs += [(pathcond + neg_invariants, fs2)]
+                # el
                 if satisfiable(pathcond + neg_invariants, fs2):
-                    print("yep")
+                    avs += [(pathcond + neg_invariants, fs2)]
             print(f"  > new fs: {fs2}")
             print(f"  > new pc: {pathcond}")
             return ec, env, fs2, pathcond, avs
@@ -379,9 +370,9 @@ def symb_interp(s: 'Script',
                                 lambda ecs, env, fs, pathcond, avs: (ecs[1], env, fs, pathcond, avs))
 
         case Set(name, expr):
-            expanded_formula = sym_expand(expr, env)
-            env2 = bind(env, [name], [expanded_str])
-            return 0, env2
+            expanded_formula = symb_expand(expr, env)
+            env2 = bind(env, [name], [expanded_formula])
+            return 0, env2, fs, pathcond, avs
 
         case If(tst, thn, els):
             match tst:
@@ -450,16 +441,16 @@ def symb_expand(word: 'Word', env: 'SymbEnv') -> 'SymString':
         case Concat(l, r):
             le = symb_expand(l, env)
             re = symb_expand(r, env)
-            if isinstance(le, Str) and isinstance(re, str):
+            if isinstance(le, Str) and isinstance(re, Str):
                 return Str(le.s + re.s)
             else:
                 return SymConcat(le, re)
         case _:
             raise Exception(f"Unexpected word: {word!r}")
 
-def lookup_spec(binary, arg_symstrs) -> tuple[list['Formula'],
-                                              Callable[['FS'], 'FS'],
-                                              list['Formula']]:
+def lookup_spec(binary, arg_symstrs) -> tuple[list['Formula'], # preconditions
+                                              Callable[['FS'], 'FS'], # FS effects
+                                              list['Formula']]: # postconditions
     match binary:
         case 'echo':
             return [], lambda fs: fs
@@ -518,7 +509,9 @@ FS_rules = [rawZ3(z3.ForAll(_fs_rule_path,
                                        z3.Not(z3.Or(*[z3_fs_state_funs[other_state](_fs_rule_path) \
                                                 for other_state in z3_fs_state_funs \
                                                 if other_state != state]))))) \
-            for state in z3_fs_state_funs]
+            for state in z3_fs_state_funs] + \
+                    [rawZ3(z3.ForAll(_fs_rule_path,
+                                     z3.Or(*[state_fun(_fs_rule_path) for state_fun in z3_fs_state_funs.values()])))]
 
 def encode_fs_z3(fs: 'SymbFS') -> list['FSPredicate']:
     return FS_rules + \
@@ -533,7 +526,6 @@ def satisfiable(constraints, fs):
     # Note: order is important here! these constraints must be added last,
     # after the constant paths have been populated
     s.add(*[constvar == path for path, constvar in const_path_map.items()])
-    s.add(*[constvar != "" for path, constvar in const_path_map.items()])
     return s.check() != z3.unsat
 
 def get_model(constraints, fs):
@@ -545,7 +537,6 @@ def get_model(constraints, fs):
     # Note: order is important here! these constraints must be added last,
     # after the constant paths have been populated
     s.add(*[constvar == path for path, constvar in const_path_map.items()])
-    s.add(*[constvar != "" for path, constvar in const_path_map.items()])
     res = s.check()
     return res, s.model() if res == z3.sat else None
 
@@ -555,9 +546,14 @@ print(avs)
 for avpath, fs in avs:
     print(get_model(avpath, fs))
 
-avs = symb_exec(Cmd('rm-rf', [Concat(Var('d1'), Str('/'))]))
+avs = symb_exec(Seq(Set("d1", Str("")),
+                    Cmd('rm-rf', [Concat(Var('d1'), Str('/'))])))
 print(avs)
 for avpath, fs in avs:
     print(get_model(avpath, fs))
 
+avs = symb_exec(Cmd('rm-rf', [Concat(Var('d1'), Str('/'))]))
+print(avs)
+for avpath, fs in avs:
+    print(get_model(avpath, fs))
 

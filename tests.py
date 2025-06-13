@@ -54,17 +54,17 @@ class TestInterp(unittest.TestCase):
         # Never symbolic interpret the same code twice if the pathconditions are the same
         #
         # Detect guaranteed infinite loops and stop
-        self.assertEqual(symb_exec(
-            Fun(["a"],
-                [BaseType.INT],
-                Let("omega", FunType([BaseType.INT, BaseType.INT],
-                                     BaseType.INT),
-                    Fun(["x"], [BaseType.INT],
-                        If(Stop?,
-                           answer,
-                           App(Var("x"), Var("x")))),
-                    App(Var("omega"), Var("omega"))))),
-                         Num(0))
+        # self.assertEqual(symb_exec(
+        #     Fun(["a"],
+        #         [BaseType.INT],
+        #         Let("omega", FunType([BaseType.INT, BaseType.INT],
+        #                              BaseType.INT),
+        #             Fun(["x"], [BaseType.INT],
+        #                 If(Stop?,
+        #                    answer,
+        #                    App(Var("x"), Var("x")))),
+        #             App(Var("omega"), Var("omega"))))),
+        #                  Num(0))
 
 
         self.assertEqual(interp(App(Let("x", BaseType.INT, Num(5),
